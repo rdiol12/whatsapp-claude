@@ -1,0 +1,7 @@
+node_modules/
+auth/
+data/
+logs/
+workspace/
+.env
+qr.png
