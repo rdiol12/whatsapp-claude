@@ -14,15 +14,18 @@ import { startTelegramPolling, stopTelegramPolling } from './lib/telegram.js';
 import { createQueue } from './lib/queue.js';
 import { getState, setState } from './lib/state.js';
 import { searchMemories, smartIngest, setIntention } from './lib/mcp-gateway.js';
+import { Cron } from 'croner';
 import { addCron, deleteCron, toggleCron, listCrons, runCronNow } from './lib/crons.js';
+import { generateRecap } from './lib/recap.js';
 import { getMessages, addMessage } from './lib/history.js';
 import { persistMetrics } from './lib/metrics.js';
+import { flushOutcomeState } from './lib/outcome-tracker.js';
 import config from './lib/config.js';
 
 const log = createLogger('bot');
 
 log.info('=== WhatsApp Claude Bot ===');
-log.info({ model: process.env.CLAUDE_MODEL || 'sonnet' }, 'Model configured');
+log.info({ model: process.env.CLAUDE_MODEL || 'sonnet', persistentMode: config.persistentMode }, 'Config loaded');
 log.info({ allowedPhone: process.env.ALLOWED_PHONE || '972543260864' }, 'Allowed phone configured');
 
 // Load conversation history from disk
@@ -37,6 +40,14 @@ loadGoals();
 
 // Connect to vestige-mcp persistently (for pre-fetch context)
 await initMcpGateway();
+
+// Initialize persistent Claude process (if enabled)
+if (config.persistentMode) {
+  const { initPersistentProcess } = await import('./lib/claude-persistent.js');
+  const { getSessionId, getSystemPrompt } = await import('./lib/claude.js');
+  initPersistentProcess(getSessionId(), getSystemPrompt());
+  log.info('Persistent Claude process initialized');
+}
 
 // Create message queue (concurrency control)
 const queue = createQueue({
@@ -83,6 +94,7 @@ async function onShutdown(signal) {
   stopTelegramPolling();
   stopProactiveLoop();
   stopIpcServer();
+  recapCron.stop();
   log.info({ ms: Date.now() - t1 }, 'Shutdown: stopped accepting new work');
 
   // 2. Drain in-flight messages (up to 10s)
@@ -90,12 +102,20 @@ async function onShutdown(signal) {
   const drained = await queue.drain(10_000);
   log.info({ ms: Date.now() - t2, drained }, 'Shutdown: queue drain');
 
+  // 2b. Shutdown persistent Claude process (if enabled)
+  if (config.persistentMode) {
+    const { shutdownPersistentProcess } = await import('./lib/claude-persistent.js');
+    shutdownPersistentProcess();
+    log.info('Shutdown: persistent Claude process stopped');
+  }
+
   // 3. Persist state
   const t3 = Date.now();
   flushHistory();
   flushGoals();
   cleanupWorkflows();
   persistMetrics();
+  try { flushOutcomeState(); } catch {}
   log.info({ ms: Date.now() - t3 }, 'Shutdown: state persisted');
 
   // 4. Shutdown plugins
@@ -160,3 +180,21 @@ if (!listCrons().some(j => j.id === 'vestige-gc' || j.name === 'vestige-gc')) {
   addCron('vestige-gc', '0 23 * * 0', 'Run vestige memory maintenance: 1) Call the consolidate MCP tool to merge duplicate/similar memories. 2) Call garbageCollect with dryRun=false and minRetention=0.1 to remove low-value memories. 3) Call findDuplicates with threshold=0.8 and report how many were found. Report a brief summary of what was cleaned up.', null, 'silent');
   log.info('Bootstrap: created vestige-gc cron (Sunday 23:00)');
 }
+
+// Bootstrap: daily recap at 22:00 (silent delivery, announce result via WhatsApp)
+const recapCron = new Cron('0 22 * * *', { timezone: 'Asia/Jerusalem' }, async () => {
+  log.info('Daily recap cron firing');
+  try {
+    const { text, generatedAt } = await generateRecap();
+    if (botApi.send && text) {
+      await botApi.send(`*Daily Recap*\n\n${text}`);
+      log.info('Sent end-of-day recap');
+    } else {
+      log.warn('Daily recap generated but no send function available');
+    }
+  } catch (err) {
+    log.error({ err: err.message }, 'Daily recap cron failed');
+    notify('Daily recap failed: ' + err.message);
+  }
+});
+log.info('Bootstrap: daily recap cron scheduled (22:00)');
