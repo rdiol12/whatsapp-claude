@@ -154,3 +154,9 @@ startProactiveLoop(async (text) => {
   if (botApi.send) await botApi.send(text);
   else log.warn({ text: text.slice(0, 100) }, 'Proactive message dropped (no send function)');
 });
+
+// Bootstrap: ensure vestige maintenance cron exists (weekly gc + consolidate)
+if (!listCrons().some(j => j.id === 'vestige-gc' || j.name === 'vestige-gc')) {
+  addCron('vestige-gc', '0 23 * * 0', 'Run vestige memory maintenance: 1) Call the consolidate MCP tool to merge duplicate/similar memories. 2) Call garbageCollect with dryRun=false and minRetention=0.1 to remove low-value memories. 3) Call findDuplicates with threshold=0.8 and report how many were found. Report a brief summary of what was cleaned up.', null, 'silent');
+  log.info('Bootstrap: created vestige-gc cron (Sunday 23:00)');
+}
