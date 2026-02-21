@@ -5,3 +5,7 @@ logs/
 workspace/
 .env
 qr.png
+mcp-config.json
+*.db
+*.db-wal
+*.db-shm

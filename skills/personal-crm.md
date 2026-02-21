@@ -13,7 +13,7 @@ Auto-tracks contacts from Gmail and Google Calendar with AI-powered filtering.
 2. **Environment variables:**
    ```
    GEMINI_API_KEY=your-key       # For AI classification + embeddings
-   CRM_MY_EMAILS=rdiol12@gmail.com  # Comma-separated list of your emails
+   CRM_MY_EMAILS=user@example.com  # Comma-separated list of your emails
    CRM_DAYS=60                   # How far back to scan
    ```
 

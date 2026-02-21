@@ -8,34 +8,129 @@
 import http from 'http';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { createHash, randomBytes } from 'crypto';
+import { config } from 'dotenv';
+
+// Load .env for DASHBOARD_SECRET
+config({ path: join(process.env.HOME || process.env.USERPROFILE || '', 'whatsapp-claude', '.env') });
 
 const DASHBOARD_PORT = 4242;
 const DATA_DIR = join(process.env.HOME || process.env.USERPROFILE || '', 'whatsapp-claude', 'data');
 const PORT_FILE = join(DATA_DIR, '.ipc-port');
+const DASHBOARD_SECRET = process.env.DASHBOARD_SECRET || '';
+const SESSION_TOKEN = DASHBOARD_SECRET ? createHash('sha256').update(DASHBOARD_SECRET + ':dash-session').digest('hex') : '';
 
-function getIpcPort() {
+// --- Login rate limiting ---
+const loginAttempts = new Map(); // ip → { count, lockedUntil }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60_000; // 5 minutes
+
+function checkLoginRate(ip) {
+  const entry = loginAttempts.get(ip);
+  if (!entry) return true;
+  if (entry.lockedUntil && Date.now() < entry.lockedUntil) return false;
+  if (entry.lockedUntil && Date.now() >= entry.lockedUntil) { loginAttempts.delete(ip); return true; }
+  return entry.count < MAX_LOGIN_ATTEMPTS;
+}
+
+function recordLoginFailure(ip) {
+  const entry = loginAttempts.get(ip) || { count: 0, lockedUntil: null };
+  entry.count++;
+  if (entry.count >= MAX_LOGIN_ATTEMPTS) entry.lockedUntil = Date.now() + LOCKOUT_MS;
+  loginAttempts.set(ip, entry);
+}
+
+function clearLoginFailures(ip) { loginAttempts.delete(ip); }
+
+// Prune stale entries every 10 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginAttempts) {
+    if (e.lockedUntil && now >= e.lockedUntil) loginAttempts.delete(ip);
+  }
+}, 600_000).unref();
+
+function parseCookies(req) {
+  const cookies = {};
+  (req.headers.cookie || '').split(';').forEach(c => {
+    const [k, ...v] = c.trim().split('=');
+    if (k) cookies[k] = v.join('=');
+  });
+  return cookies;
+}
+
+function isAuthenticated(req) {
+  if (!DASHBOARD_SECRET) return true; // no auth configured
+  const cookies = parseCookies(req);
+  return cookies.dash_session === SESSION_TOKEN;
+}
+
+const LOGIN_HTML = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0f"><title>Dashboard Login</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#e2e2f0;font-family:'JetBrains Mono',monospace;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-box{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:32px;width:340px;max-width:92vw}
+.login-title{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.login-logo{width:32px;height:32px;background:linear-gradient(135deg,#7c6af7,#22d3ee);border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:white}
+.login-sub{color:#444466;font-size:11px;margin-bottom:20px}
+.login-input{width:100%;background:#16161f;border:1px solid #1e1e2e;border-radius:6px;padding:10px 14px;color:#e2e2f0;font-family:inherit;font-size:13px;outline:none;margin-bottom:14px}
+.login-input:focus{border-color:#7c6af7}
+.login-btn{width:100%;background:#7c6af7;border:none;border-radius:6px;padding:10px;color:white;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s}
+.login-btn:hover{background:#a78bfa}
+.login-err{color:#f43f5e;font-size:11px;margin-top:10px;text-align:center;display:none}
+</style></head><body>
+<div class="login-box">
+<div class="login-title"><div class="login-logo">A</div>Agent Dashboard</div>
+<div class="login-sub">Enter password to access the dashboard</div>
+<form method="POST" action="/login">
+<input class="login-input" type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+<button class="login-btn" type="submit">Sign In</button>
+</form>
+<div class="login-err" id="err">Invalid password</div>
+<div class="login-err" id="lockErr">Too many attempts. Try again in 5 minutes.</div>
+</div>
+<script>
+if(location.search.includes('error=1'))document.getElementById('err').style.display='block';
+if(location.search.includes('error=locked'))document.getElementById('lockErr').style.display='block';
+</script>
+</body></html>`;
+
+function getIpcConfig() {
   try {
-    return parseInt(readFileSync(PORT_FILE, 'utf-8').trim());
+    const raw = readFileSync(PORT_FILE, 'utf-8').trim();
+    if (raw.startsWith('{')) {
+      const config = JSON.parse(raw);
+      return { port: config.port, token: config.token };
+    }
+    return { port: parseInt(raw), token: null };
   } catch {
     return null;
   }
 }
 
 function proxyToIpc(req, res, targetPath, targetMethod) {
-  const ipcPort = getIpcPort();
-  if (!ipcPort) {
+  const ipcConfig = getIpcConfig();
+  if (!ipcConfig) {
     res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Bot offline' }));
     return;
   }
 
+  const headers = { 'Content-Type': 'application/json' };
+  if (ipcConfig.token) {
+    headers['Authorization'] = `Bearer ${ipcConfig.token}`;
+  }
+
   const proxyReq = http.request({
     hostname: '127.0.0.1',
-    port: ipcPort,
+    port: ipcConfig.port,
     path: targetPath,
     method: targetMethod || req.method,
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 15000,
+    headers,
+    timeout: 35000,
   }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, {
       'Content-Type': 'application/json',
@@ -519,6 +614,7 @@ const HTML = `<!DOCTYPE html>
     <button class="refresh-btn" onclick="refreshAll()">
       <span id="refreshIcon">&circlearrowright;</span> <span>Refresh</span>
     </button>
+    <a href="/logout" class="refresh-btn" style="text-decoration:none;font-size:10px;padding:4px 9px" title="Sign out">&raquo; Logout</a>
     <button class="burger" id="burgerBtn" onclick="toggleMobileNav()">
       <span></span><span></span><span></span>
     </button>
@@ -526,7 +622,7 @@ const HTML = `<!DOCTYPE html>
 </header>
 
 <nav class="mobile-nav" id="mobileNav">
-  <button class="mobile-nav-item active" onclick="showPanel(0, this)"><span class="nav-icon">&para;</span> Status &amp; Crons</button>
+  <button class="mobile-nav-item active" onclick="showPanel(0, this)"><span class="nav-icon">&para;</span> Status &amp; Health</button>
   <button class="mobile-nav-item" onclick="showPanel(1, this)"><span class="nav-icon">&equiv;</span> Notes &amp; Soul</button>
   <button class="mobile-nav-item" onclick="showPanel(2, this)"><span class="nav-icon">&target;</span> Goals &amp; Cost</button>
 </nav>
@@ -568,6 +664,22 @@ const HTML = `<!DOCTYPE html>
       <div id="cronList"><div class="loading"><div class="spinner"></div> Loading...</div></div>
     </div>
 
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="dot"></span>Cron Health</div>
+        <button class="card-action" onclick="loadCronHealth()">&circlearrowright;</button>
+      </div>
+      <div id="cronHealthList"><div class="empty">No health data yet</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="dot"></span>Test Suite</div>
+        <button class="card-action" onclick="runTests()" id="testRunBtn">&triangleright; Run</button>
+      </div>
+      <div id="testResults"><div class="empty">Click Run to execute tests</div></div>
+    </div>
+
   </div>
 
   <!-- CENTER: Tabs -->
@@ -575,6 +687,7 @@ const HTML = `<!DOCTYPE html>
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('notes')">Notes</button>
+      <button class="tab" onclick="switchTab('memory')">Memory</button>
       <button class="tab" onclick="switchTab('soul')">Soul</button>
       <button class="tab" onclick="switchTab('workflows')">Workflows</button>
       <button class="tab" onclick="switchTab('outcomes')">Outcomes</button>
@@ -614,6 +727,38 @@ const HTML = `<!DOCTYPE html>
         <div id="recapPreview" style="color:var(--text3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No recap yet &mdash; click Generate.</div>
         <div id="notebody-recap" style="display:none">
           <div id="recapContent" style="color:var(--text2);font-size:12px;line-height:1.7;padding:6px 8px;background:var(--surface);border-radius:4px;margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory Browser -->
+    <div class="tab-content" id="tab-memory">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="dot"></span>Memory Search</div>
+          <button class="card-action" onclick="loadMemoryTimeline()">&circlearrowright; Recent</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:11px">
+          <input class="input" id="memSearchInput" type="text" placeholder="Search memories..." onkeydown="if(event.key==='Enter')searchMemories()">
+          <button class="btn btn-primary" onclick="searchMemories()" style="padding:6px 10px;flex-shrink:0">Search</button>
+        </div>
+        <div id="memStats" style="margin-bottom:8px"></div>
+        <div id="memResults"><div class="empty">Search or browse recent memories</div></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="card-header">
+          <div class="card-title"><span class="dot"></span>Ingest Memory</div>
+        </div>
+        <textarea class="input" id="memIngestContent" placeholder="Enter content to remember..." style="min-height:60px;resize:vertical;margin-bottom:8px"></textarea>
+        <div style="display:flex;gap:6px">
+          <input class="input" id="memIngestTags" type="text" placeholder="Tags (comma-separated)" style="flex:1">
+          <select class="input" id="memIngestType" style="width:auto;padding:6px 8px">
+            <option value="fact">Fact</option>
+            <option value="preference">Preference</option>
+            <option value="event">Event</option>
+            <option value="decision">Decision</option>
+          </select>
+          <button class="btn btn-primary" onclick="ingestMemory()" style="flex-shrink:0">Save</button>
         </div>
       </div>
     </div>
@@ -701,10 +846,11 @@ const HTML = `<!DOCTYPE html>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><span class="dot"></span>Cost Summary</div>
+        <div class="card-title"><span class="dot"></span>Cost Analytics</div>
         <button class="card-action" onclick="loadCostSummary()">&circlearrowright;</button>
       </div>
       <div id="costInfo"><div class="loading"><div class="spinner"></div></div></div>
+      <div id="costChart" style="margin-top:10px"></div>
     </div>
 
   </div>
@@ -797,10 +943,11 @@ const HTML = `<!DOCTYPE html>
   }
 
   function switchTab(name) {
-    var names = ['notes','soul','workflows','outcomes','history'];
+    var names = ['notes','memory','soul','workflows','outcomes','history'];
     document.querySelectorAll('.tab').forEach(function(t,i) { t.classList.toggle('active', names[i] === name); });
     document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
     document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'memory') loadMemoryTimeline();
     if (name === 'soul') { loadSoul(); loadReviewHistory(); }
     if (name === 'workflows') loadWorkflows();
     if (name === 'outcomes') loadOutcomes();
@@ -1234,10 +1381,27 @@ const HTML = `<!DOCTYPE html>
   // --- Cost Summary ---
   async function loadCostSummary() {
     try {
-      var d = await api('/costs/summary');
-      var html = '<div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:8px">' +
-        '<div class="metric"><div class="metric-label">Today</div><div class="metric-value accent">$' + (d.today.total||0).toFixed(2) + '</div><div class="metric-sub">' + (d.today.count||0) + ' turns</div></div>' +
-        '<div class="metric"><div class="metric-label">Yesterday</div><div class="metric-value">$' + (d.yesterday.total||0).toFixed(2) + '</div><div class="metric-sub">' + (d.yesterday.count||0) + ' turns</div></div>' +
+      var results = await Promise.allSettled([api('/costs/summary'), api('/costs?period=week')]);
+      var d = (results[0].value) || {};
+      var weekData = (results[1].value) || {};
+      var budgetLimit = 5; // $5 daily limit
+
+      // Budget progress bar
+      var todaySpend = d.today ? d.today.total : 0;
+      var budgetPct = Math.min(Math.round((todaySpend / budgetLimit) * 100), 100);
+      var budgetColor = budgetPct >= 90 ? 'var(--red)' : budgetPct >= 60 ? 'var(--yellow)' : 'var(--green)';
+
+      var html = '<div style="margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">' +
+          '<span style="color:var(--text3)">Daily Budget</span>' +
+          '<span style="color:' + budgetColor + '">$' + todaySpend.toFixed(2) + ' / $' + budgetLimit.toFixed(0) + '</span>' +
+        '</div>' +
+        '<div class="progress-bar" style="height:5px"><div class="progress-fill" style="width:' + budgetPct + '%;background:' + budgetColor + '"></div></div>' +
+      '</div>';
+
+      html += '<div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:8px">' +
+        '<div class="metric"><div class="metric-label">Today</div><div class="metric-value accent">$' + (d.today ? d.today.total : 0).toFixed(2) + '</div><div class="metric-sub">' + (d.today ? d.today.count : 0) + ' turns</div></div>' +
+        '<div class="metric"><div class="metric-label">Yesterday</div><div class="metric-value">$' + (d.yesterday ? d.yesterday.total : 0).toFixed(2) + '</div><div class="metric-sub">' + (d.yesterday ? d.yesterday.count : 0) + ' turns</div></div>' +
       '</div>' +
       '<div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:8px">' +
         '<div class="metric"><div class="metric-label">This Week</div><div class="metric-value">$' + (d.weekTotal||0).toFixed(2) + '</div><div class="metric-sub">' + (d.weekCount||0) + ' turns</div></div>' +
@@ -1248,6 +1412,30 @@ const HTML = `<!DOCTYPE html>
         html += '<div class="row"><span class="row-label">Top day</span><span style="color:var(--accent2)">' + d.topDay.date + ' ($' + d.topDay.cost.toFixed(2) + ')</span></div>';
       }
       document.getElementById('costInfo').innerHTML = html;
+
+      // 7-day bar chart
+      var byDay = weekData.byDay || {};
+      var days = Object.keys(byDay).sort();
+      if (days.length > 1) {
+        var maxCost = Math.max.apply(null, days.map(function(k){ return byDay[k].cost; })) || 1;
+        var chartHtml = '<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Last 7 days</div>' +
+          '<div style="display:flex;align-items:flex-end;gap:3px;height:60px">';
+        days.slice(-7).forEach(function(day) {
+          var cost = byDay[day].cost;
+          var pct = Math.max(Math.round((cost / maxCost) * 100), 4);
+          var dayLabel = day.slice(5); // MM-DD
+          var barColor = cost > budgetLimit ? 'var(--red)' : 'var(--accent)';
+          chartHtml += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">' +
+            '<div style="font-size:8px;color:var(--text3)">$' + cost.toFixed(1) + '</div>' +
+            '<div style="width:100%;height:' + pct + '%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:2px;transition:height 0.3s"></div>' +
+            '<div style="font-size:7px;color:var(--text3)">' + dayLabel + '</div>' +
+          '</div>';
+        });
+        chartHtml += '</div>';
+        document.getElementById('costChart').innerHTML = chartHtml;
+      } else {
+        document.getElementById('costChart').innerHTML = '';
+      }
     } catch(e) {
       document.getElementById('costInfo').innerHTML = '<div class="empty">No cost data</div>';
     }
@@ -1327,19 +1515,376 @@ const HTML = `<!DOCTYPE html>
     }
   }
 
-  // --- Refresh all ---
+  // --- Memory Browser ---
+  async function searchMemories() {
+    var q = document.getElementById('memSearchInput').value.trim();
+    if (!q) { toast('Enter a search query','error'); return; }
+    document.getElementById('memResults').innerHTML = '<div class="loading"><div class="spinner"></div> Searching...</div>';
+    try {
+      var d = await api('/memories/search?q=' + encodeURIComponent(q) + '&limit=20');
+      var raw = d.results || '';
+      if (!raw || raw === '[]' || raw.length < 5) {
+        document.getElementById('memResults').innerHTML = '<div class="empty">No memories found for "' + esc(q) + '"</div>';
+        return;
+      }
+      renderMemoryResults(raw);
+    } catch(e) {
+      document.getElementById('memResults').innerHTML = '<div class="empty">' + e.message + '</div>';
+    }
+  }
+
+  async function loadMemoryTimeline() {
+    document.getElementById('memResults').innerHTML = '<div class="loading"><div class="spinner"></div> Loading recent...</div>';
+    try {
+      var results = await Promise.allSettled([api('/memories/timeline?limit=30'), api('/memories/stats')]);
+      var tlData = results[0].value || {};
+      var statsData = results[1].value || {};
+      // Stats bar
+      if (statsData.stats) {
+        document.getElementById('memStats').innerHTML =
+          '<div style="display:flex;gap:12px;font-size:10px;color:var(--text3);padding:4px 0">' +
+          '<span>Vestige: <span style="color:var(--green)">connected</span></span>' +
+          '</div>';
+      }
+      var raw = tlData.timeline || '';
+      if (!raw || raw.length < 5) {
+        document.getElementById('memResults').innerHTML = '<div class="empty">No memories yet</div>';
+        return;
+      }
+      renderMemoryResults(raw);
+    } catch(e) {
+      document.getElementById('memResults').innerHTML = '<div class="empty">' + e.message + '</div>';
+      document.getElementById('memStats').innerHTML = '<div style="font-size:10px;color:var(--red)">Vestige offline</div>';
+    }
+  }
+
+  function renderMemoryResults(raw) {
+    // Vestige returns plain text (not JSON), render as formatted blocks
+    var lines = String(raw).split('\\n').filter(function(l) { return l.trim(); });
+    if (!lines.length) {
+      document.getElementById('memResults').innerHTML = '<div class="empty">No results</div>';
+      return;
+    }
+    // Group into memory blocks (separated by lines starting with --- or numbered headers)
+    var blocks = [];
+    var current = [];
+    lines.forEach(function(line) {
+      if ((line.match(/^---/) || line.match(/^\\d+\\./)) && current.length > 0) {
+        blocks.push(current.join('\\n'));
+        current = [line];
+      } else {
+        current.push(line);
+      }
+    });
+    if (current.length > 0) blocks.push(current.join('\\n'));
+
+    if (blocks.length === 0) blocks = [raw];
+
+    document.getElementById('memResults').innerHTML = blocks.slice(0, 30).map(function(block, i) {
+      var firstLine = block.split('\\n')[0].replace(/^[-\\d.]+\\s*/, '').trim();
+      var preview = firstLine.length > 70 ? firstLine.slice(0, 67) + '...' : firstLine;
+      var uid = 'mem-' + i;
+      return '<div class="note-entry" onclick="toggleNote(\\'' + uid + '\\')" style="margin-bottom:5px">' +
+        '<span id="notearrow-' + uid + '" style="color:var(--text3);font-size:9px;margin-right:6px">\\u25b6</span>' +
+        '<span style="color:var(--accent2);font-size:11px">' + esc(preview) + '</span>' +
+        '<div id="notebody-' + uid + '" style="display:none;margin-top:6px;padding:8px;background:var(--surface);border-radius:4px;font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;word-break:break-word">' + esc(block) + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  async function ingestMemory() {
+    var content = document.getElementById('memIngestContent').value.trim();
+    if (!content) { toast('Enter content','error'); return; }
+    var tags = document.getElementById('memIngestTags').value.split(',').map(function(t){ return t.trim(); }).filter(Boolean);
+    var nodeType = document.getElementById('memIngestType').value;
+    try {
+      await api('/memories/ingest', {method:'POST', body: JSON.stringify({content:content, tags:tags, nodeType:nodeType})});
+      toast('Memory saved','success');
+      document.getElementById('memIngestContent').value = '';
+      document.getElementById('memIngestTags').value = '';
+    } catch(e) { toast(e.message,'error'); }
+  }
+
+  // --- Cron Health ---
+  async function loadCronHealth() {
+    try {
+      var d = await api('/cron-health');
+      var crons = d.crons || {};
+      var entries = Object.values(crons);
+      if (!entries.length) { document.getElementById('cronHealthList').innerHTML = '<div class="empty">No health data yet</div>'; return; }
+      entries.sort(function(a,b) { return (b.errors/(b.runs||1)) - (a.errors/(a.runs||1)); });
+      document.getElementById('cronHealthList').innerHTML = entries.map(function(c) {
+        var rate = c.runs > 0 ? Math.round(((c.runs - c.errors) / c.runs) * 100) : 0;
+        var color = rate >= 80 ? 'var(--green)' : rate >= 50 ? 'var(--yellow)' : 'var(--red)';
+        var disabled = c.autoDisabled ? ' <span style="color:var(--red);font-size:9px">[auto-disabled]</span>' : '';
+        var lastErr = c.lastError ? '<div style="color:var(--text3);font-size:9px;margin-top:2px">Last error: ' + esc(c.lastError.message||'').slice(0,60) + '</div>' : '';
+        return '<div class="svc-item" style="flex-wrap:wrap">' +
+          '<div class="svc-dot" style="background:' + color + ';box-shadow:0 0 5px ' + color + '"></div>' +
+          '<span class="svc-name">' + esc(c.name||'unknown') + disabled + '</span>' +
+          '<span style="font-size:10px;color:' + color + '">' + rate + '% ok</span>' +
+          '<span style="color:var(--text3);font-size:9px">' + c.runs + ' runs, ' + c.errors + ' errs</span>' +
+          lastErr +
+        '</div>';
+      }).join('');
+    } catch(e) {
+      document.getElementById('cronHealthList').innerHTML = '<div class="empty">' + e.message + '</div>';
+    }
+  }
+
+  // --- Test Runner ---
+  async function runTests() {
+    var btn = document.getElementById('testRunBtn');
+    btn.textContent = '...';
+    btn.disabled = true;
+    document.getElementById('testResults').innerHTML = '<div class="loading"><div class="spinner"></div> Running tests...</div>';
+    try {
+      var d = await api('/tests/run', {method:'POST'});
+      var color = d.failed > 0 ? 'var(--red)' : 'var(--green)';
+      var statusText = d.failed > 0 ? d.failed + ' FAILED' : 'ALL PASSED';
+      document.getElementById('testResults').innerHTML =
+        '<div class="metrics" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:8px">' +
+          '<div class="metric"><div class="metric-label">Total</div><div class="metric-value accent">' + d.total + '</div></div>' +
+          '<div class="metric"><div class="metric-label">Passed</div><div class="metric-value green">' + d.passed + '</div></div>' +
+          '<div class="metric"><div class="metric-label">Failed</div><div class="metric-value' + (d.failed>0?' red':'') + '">' + d.failed + '</div></div>' +
+        '</div>' +
+        '<div style="text-align:center;font-size:11px;font-weight:600;color:' + color + ';padding:4px 0">' + statusText + '</div>' +
+        (d.failed > 0 ? '<div style="margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:10px;color:var(--text3);max-height:150px;overflow-y:auto;white-space:pre-wrap">' + esc(d.output.split('\\n').filter(function(l){return l.includes('FAIL');}).join('\\n') || d.output.slice(-500)) + '</div>' : '');
+      toast(statusText,'success');
+    } catch(e) {
+      document.getElementById('testResults').innerHTML = '<div class="empty">' + e.message + '</div>';
+      toast('Test run failed','error');
+    }
+    btn.textContent = '\u25b7 Run';
+    btn.disabled = false;
+  }
+
+  // --- WebSocket live updates ---
+  var ws = null;
+  var wsConnected = false;
+  var wsReconnectTimer = null;
+  var wsReconnectDelay = 1000;
+
+  function connectWs() {
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // already connecting/open
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+    ws.onopen = function() {
+      wsConnected = true;
+      wsReconnectDelay = 1000;
+      document.getElementById('statusDot').className = 'status-dot';
+      updateTimestamp();
+    };
+
+    ws.onmessage = function(evt) {
+      try {
+        var msg = JSON.parse(evt.data);
+        if (msg.type === 'state') applyLiveState(msg.data);
+        if (msg.type === 'event') handleWsEvent(msg);
+        updateTimestamp();
+      } catch(e) {}
+    };
+
+    ws.onclose = function() {
+      wsConnected = false;
+      scheduleReconnect();
+    };
+
+    ws.onerror = function() {
+      wsConnected = false;
+    };
+  }
+
+  function scheduleReconnect() {
+    if (wsReconnectTimer) return;
+    wsReconnectTimer = setTimeout(function() {
+      wsReconnectTimer = null;
+      wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 30000);
+      connectWs();
+    }, wsReconnectDelay);
+  }
+
+  function updateTimestamp() {
+    document.getElementById('lastUpdated').textContent =
+      new Date().toLocaleTimeString('en-IL',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) + (wsConnected ? ' \\u26a1' : '');
+  }
+
+  function handleWsEvent(msg) {
+    var e = msg.event || '';
+    var d = msg.data || {};
+    if (e === 'message:received') {
+      toast('Message: ' + (d.preview || '').slice(0, 40), 'info');
+    } else if (e === 'message:reply') {
+      toast('Reply sent (' + (d.claudeMs/1000).toFixed(1) + 's, $' + (d.costUsd||0).toFixed(3) + ')', 'success');
+    } else if (e === 'cron:completed') {
+      toast('Cron "' + (d.name||d.id) + '" completed', 'success');
+    } else if (e === 'cron:failed') {
+      toast('Cron "' + (d.name||d.id) + '" failed: ' + (d.error||'').slice(0,40), 'error');
+    } else if (e === 'cost:alert') {
+      toast('Cost alert: $' + (d.total||0).toFixed(2) + ' / $' + (d.limit||5), 'error');
+    }
+  }
+
+  // Apply pushed state to all dashboard sections
+  function applyLiveState(data) {
+    if (data.status) applyStatus(data.status);
+    if (data.crons) applyCrons(data.crons);
+    if (data.services) applyServices(data.services);
+    if (data.cronHealth) applyCronHealth(data.cronHealth);
+    if (data.costs) applyCosts(data.costs);
+  }
+
+  // --- Status from WS ---
+  function applyStatus(d) {
+    document.getElementById('statusDot').className = 'status-dot';
+    document.getElementById('statusMetrics').innerHTML =
+      '<div class="metric"><div class="metric-label">Uptime</div><div class="metric-value accent">' + (d.uptime||'\\u2014') + '</div></div>' +
+      '<div class="metric"><div class="metric-label">Memory</div><div class="metric-value">' + (d.memory||'\\u2014') + '</div><div class="metric-sub">RSS</div></div>' +
+      '<div class="metric"><div class="metric-label">Model</div><div class="metric-value" style="font-size:12px">' + (d.model||'\\u2014') + '</div></div>' +
+      '<div class="metric"><div class="metric-label">Session</div><div class="metric-value accent">~' + fmt(d.sessionTokens) + '</div><div class="metric-sub">tokens</div></div>';
+    document.getElementById('runtimeInfo').innerHTML =
+      '<div class="row"><span class="row-label">Vestige MCP</span><span style="color:' + (d.mcpConnected?'var(--green)':'var(--red)') + '">' + (d.mcpConnected?'\\u25cf connected':'\\u25cb disconnected') + '</span></div>' +
+      '<div class="row"><span class="row-label">Queue</span><span>' + ((d.queue&&d.queue.running)||0) + ' running \\u00b7 ' + ((d.queue&&d.queue.waiting)||0) + ' waiting</span></div>' +
+      '<div class="row"><span class="row-label">Crons</span><span>' + (d.cronCount||0) + ' jobs</span></div>';
+  }
+
+  // --- Crons from WS ---
+  function applyCrons(cronData) {
+    var crons = cronData.crons || [];
+    if (!crons.length) { document.getElementById('cronList').innerHTML = '<div class="empty">No cron jobs</div>'; return; }
+    document.getElementById('cronList').innerHTML = crons.map(function(c) {
+      var rate = 100; // WS push doesn't include engagement yet, default 100
+      var nextStr = c.nextRun ? new Date(c.nextRun).toLocaleString('en-IL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Jerusalem'}) : '';
+      var lastStr = c.lastRun ? timeAgo(c.lastRun) : '';
+      return '<div class="cron-item ' + (c.enabled===false?'disabled':'') + '">' +
+        '<div class="cron-top">' +
+          cronRing(rate) +
+          '<div class="cron-name">' + esc(c.name) + '</div>' +
+          '<div class="cron-actions">' +
+            '<button class="icon-btn" title="Run" onclick="runCron(\\'' + c.id + '\\')">\\u25b6</button>' +
+            '<button class="icon-btn" title="Toggle" onclick="toggleCron(\\'' + c.id + '\\')">' + (c.enabled!==false?'\\u23f8':'\\u25b7') + '</button>' +
+            '<button class="icon-btn danger" title="Delete" onclick="deleteCron(\\'' + c.id + '\\',\\'' + esc(c.name).replace(/'/g,"\\\\'") + '\\')">\\u2715</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cron-meta">' +
+          esc(c.schedule) +
+          (nextStr ? ' \\u00b7 next: ' + nextStr : '') +
+          (lastStr ? ' \\u00b7 ran: ' + lastStr : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // --- Services from WS ---
+  function applyServices(d) {
+    var html = '';
+    (d.mcp || []).forEach(function(s) {
+      html += '<div class="svc-item">' +
+        '<div class="svc-dot ' + s.status + '"></div>' +
+        '<span class="svc-name">' + esc(s.name) + '</span>' +
+        '<span class="svc-status ' + s.status + '">' + s.status + (s.failures > 0 ? ' (' + s.failures + ' fails)' : '') + '</span>' +
+      '</div>';
+    });
+    (d.plugins || []).forEach(function(p) {
+      html += '<div class="svc-item">' +
+        '<div class="svc-dot ' + p.status + '"></div>' +
+        '<span class="svc-name">' + esc(p.name) + '</span>' +
+        '<span class="svc-status ' + p.status + '">' + p.status + '</span>' +
+      '</div>';
+    });
+    document.getElementById('serviceList').innerHTML = html || '<div class="empty">No services</div>';
+  }
+
+  // --- Cron Health from WS ---
+  function applyCronHealth(d) {
+    var crons = d.crons || {};
+    var entries = Object.values(crons);
+    if (!entries.length) { document.getElementById('cronHealthList').innerHTML = '<div class="empty">No health data yet</div>'; return; }
+    entries.sort(function(a,b) { return (b.errors/(b.runs||1)) - (a.errors/(a.runs||1)); });
+    document.getElementById('cronHealthList').innerHTML = entries.map(function(c) {
+      var rate = c.runs > 0 ? Math.round(((c.runs - c.errors) / c.runs) * 100) : 0;
+      var color = rate >= 80 ? 'var(--green)' : rate >= 50 ? 'var(--yellow)' : 'var(--red)';
+      var disabled = c.autoDisabled ? ' <span style="color:var(--red);font-size:9px">[auto-disabled]</span>' : '';
+      var lastErr = c.lastError ? '<div style="color:var(--text3);font-size:9px;margin-top:2px">Last error: ' + esc(c.lastError.message||'').slice(0,60) + '</div>' : '';
+      return '<div class="svc-item" style="flex-wrap:wrap">' +
+        '<div class="svc-dot" style="background:' + color + ';box-shadow:0 0 5px ' + color + '"></div>' +
+        '<span class="svc-name">' + esc(c.name||'unknown') + disabled + '</span>' +
+        '<span style="font-size:10px;color:' + color + '">' + rate + '% ok</span>' +
+        '<span style="color:var(--text3);font-size:9px">' + c.runs + ' runs, ' + c.errors + ' errs</span>' +
+        lastErr +
+      '</div>';
+    }).join('');
+  }
+
+  // --- Costs from WS (overview data) ---
+  function applyCosts(d) {
+    var budgetLimit = 5;
+    var todaySpend = d.today ? d.today.total : 0;
+    var budgetPct = Math.min(Math.round((todaySpend / budgetLimit) * 100), 100);
+    var budgetColor = budgetPct >= 90 ? 'var(--red)' : budgetPct >= 60 ? 'var(--yellow)' : 'var(--green)';
+
+    var html = '<div style="margin-bottom:10px">' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">' +
+        '<span style="color:var(--text3)">Daily Budget</span>' +
+        '<span style="color:' + budgetColor + '">$' + todaySpend.toFixed(2) + ' / $' + budgetLimit.toFixed(0) + '</span>' +
+      '</div>' +
+      '<div class="progress-bar" style="height:5px"><div class="progress-fill" style="width:' + budgetPct + '%;background:' + budgetColor + '"></div></div>' +
+    '</div>';
+
+    html += '<div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:8px">' +
+      '<div class="metric"><div class="metric-label">Today</div><div class="metric-value accent">$' + (d.today ? d.today.total : 0).toFixed(2) + '</div><div class="metric-sub">' + (d.today ? d.today.count : 0) + ' turns</div></div>' +
+      '<div class="metric"><div class="metric-label">Yesterday</div><div class="metric-value">$' + (d.yesterday ? d.yesterday.total : 0).toFixed(2) + '</div><div class="metric-sub">' + (d.yesterday ? d.yesterday.count : 0) + ' turns</div></div>' +
+    '</div>' +
+    '<div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:8px">' +
+      '<div class="metric"><div class="metric-label">This Week</div><div class="metric-value">$' + (d.weekTotal||0).toFixed(2) + '</div><div class="metric-sub">' + (d.weekCount||0) + ' turns</div></div>' +
+      '<div class="metric"><div class="metric-label">This Month</div><div class="metric-value">$' + (d.monthTotal||0).toFixed(2) + '</div><div class="metric-sub">' + (d.monthCount||0) + ' turns</div></div>' +
+    '</div>' +
+    '<div class="row"><span class="row-label">Daily avg</span><span style="color:var(--text2)">$' + (d.dailyAvg||0).toFixed(2) + '</span></div>';
+    if (d.topDay && d.topDay.cost > 0) {
+      html += '<div class="row"><span class="row-label">Top day</span><span style="color:var(--accent2)">' + d.topDay.date + ' ($' + d.topDay.cost.toFixed(2) + ')</span></div>';
+    }
+    document.getElementById('costInfo').innerHTML = html;
+
+    // 7-day bar chart from WS byDay data
+    var byDay = d.byDay || {};
+    var days = Object.keys(byDay).sort();
+    if (days.length > 1) {
+      var maxCost = Math.max.apply(null, days.map(function(k){ return byDay[k].cost; })) || 1;
+      var chartHtml = '<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Last 7 days</div>' +
+        '<div style="display:flex;align-items:flex-end;gap:3px;height:60px">';
+      days.slice(-7).forEach(function(day) {
+        var cost = byDay[day].cost;
+        var pct = Math.max(Math.round((cost / maxCost) * 100), 4);
+        var dayLabel = day.slice(5);
+        var barColor = cost > budgetLimit ? 'var(--red)' : 'var(--accent)';
+        chartHtml += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">' +
+          '<div style="font-size:8px;color:var(--text3)">$' + cost.toFixed(1) + '</div>' +
+          '<div style="width:100%;height:' + pct + '%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:2px;transition:height 0.3s"></div>' +
+          '<div style="font-size:7px;color:var(--text3)">' + dayLabel + '</div>' +
+        '</div>';
+      });
+      chartHtml += '</div>';
+      document.getElementById('costChart').innerHTML = chartHtml;
+    }
+  }
+
+  // --- Refresh all (manual fallback + initial load for non-WS data) ---
   async function refreshAll() {
     var icon = document.getElementById('refreshIcon');
     icon.style.cssText = 'animation:spin 0.6s linear infinite;display:inline-block';
-    await Promise.allSettled([loadStatus(), loadCrons(), loadNotes(), loadRecap(), loadGoals(), loadCostSummary(), loadServices(), loadUserNotes()]);
+    await Promise.allSettled([loadStatus(), loadCrons(), loadNotes(), loadRecap(), loadGoals(), loadCostSummary(), loadServices(), loadUserNotes(), loadCronHealth()]);
     icon.style.cssText = '';
-    document.getElementById('lastUpdated').textContent =
-      new Date().toLocaleTimeString('en-IL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    updateTimestamp();
   }
 
-  // Auto-refresh every 30s
-  setInterval(refreshAll, 30000);
+  // Slow poll fallback (60s) for data not pushed via WS (notes, recap, goals, user notes)
+  setInterval(function() {
+    Promise.allSettled([loadNotes(), loadGoals(), loadUserNotes()]);
+  }, 60000);
+
+  // Initial load: everything once, then WS handles live data
   refreshAll();
+  connectWs();
 </script>
 </body>
 </html>`;
@@ -1360,6 +1905,63 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // --- Login flow ---
+  if (url.pathname === '/login' && req.method === 'GET') {
+    if (isAuthenticated(req)) { res.writeHead(302, { Location: '/' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(LOGIN_HTML);
+    return;
+  }
+
+  if (url.pathname === '/login' && req.method === 'POST') {
+    const ip = req.socket.remoteAddress || '';
+    if (!checkLoginRate(ip)) {
+      res.writeHead(302, { Location: '/login?error=locked' });
+      res.end();
+      return;
+    }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 4096) req.destroy(); });
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const pw = params.get('password') || '';
+      if (pw === DASHBOARD_SECRET) {
+        clearLoginFailures(ip);
+        res.writeHead(302, {
+          Location: '/',
+          'Set-Cookie': `dash_session=${SESSION_TOKEN}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800`,
+        });
+        res.end();
+      } else {
+        recordLoginFailure(ip);
+        res.writeHead(302, { Location: '/login?error=1' });
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/logout') {
+    res.writeHead(302, {
+      Location: '/login',
+      'Set-Cookie': 'dash_session=; Path=/; HttpOnly; Max-Age=0',
+    });
+    res.end();
+    return;
+  }
+
+  // --- Auth gate ---
+  if (!isAuthenticated(req)) {
+    if (url.pathname.startsWith('/api/')) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+    } else {
+      res.writeHead(302, { Location: '/login' });
+      res.end();
+    }
+    return;
+  }
+
   // Serve HTML
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -1377,6 +1979,55 @@ const server = http.createServer((req, res) => {
 
   res.writeHead(404);
   res.end('Not found');
+});
+
+// --- WebSocket proxy: /ws → IPC WebSocket ---
+import { WebSocket, WebSocketServer } from 'ws';
+
+const dashWss = new WebSocketServer({ noServer: true });
+
+dashWss.on('connection', (clientWs) => {
+  const ipc = getIpcConfig();
+  if (!ipc) { clientWs.close(1011, 'Bot offline'); return; }
+
+  const upstream = new WebSocket(`ws://127.0.0.1:${ipc.port}/ws?token=${ipc.token}`);
+
+  upstream.on('open', () => {
+    upstream.on('message', (data) => { if (clientWs.readyState === 1) clientWs.send(data); });
+    clientWs.on('message', (data) => { if (upstream.readyState === 1) upstream.send(data); });
+  });
+
+  upstream.on('error', () => { if (clientWs.readyState === 1) clientWs.close(1011, 'IPC error'); });
+  upstream.on('close', () => { if (clientWs.readyState <= 1) clientWs.close(1001, 'IPC closed'); });
+  clientWs.on('close', () => { if (upstream.readyState <= 1) upstream.close(); });
+  clientWs.on('error', () => { if (upstream.readyState <= 1) upstream.close(); });
+});
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname !== '/ws') {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Auth check (same cookie as HTTP)
+  if (DASHBOARD_SECRET) {
+    const cookies = {};
+    (req.headers.cookie || '').split(';').forEach(c => {
+      const [k, ...v] = c.trim().split('=');
+      if (k) cookies[k] = v.join('=');
+    });
+    if (cookies.dash_session !== SESSION_TOKEN) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+
+  dashWss.handleUpgrade(req, socket, head, (ws) => {
+    dashWss.emit('connection', ws, req);
+  });
 });
 
 server.listen(DASHBOARD_PORT, '127.0.0.1', () => {

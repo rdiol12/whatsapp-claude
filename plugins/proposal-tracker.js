@@ -9,7 +9,7 @@
 
 export const meta = {
   name: 'proposal-tracker',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Tracks user responses to agent brain proposals',
   priority: 10, // Run early — before other preChat hooks
 };
@@ -29,10 +29,11 @@ export async function onStartup(botApi) {
 
 /**
  * preChat hook — fires before message goes to Claude.
+ * Signature: (text, history, botApi)
  * If the message is a response to a pending proposal, handle it here
- * and return a response (prevents unnecessary Claude call).
+ * and return { handled: true } to skip the Claude call.
  */
-export async function preChat({ text, jid }, botApi) {
+export async function preChat(text, history, botApi) {
   if (!checkProposalResponse || !text) return;
 
   const result = checkProposalResponse(text);
@@ -44,9 +45,6 @@ export async function preChat({ text, jid }, botApi) {
   switch (feedback) {
     case 'approved':
       replyText = 'Got it. I\'ll set that up.';
-      // The actual action execution would be handled by the brain
-      // in the next cycle or by a dedicated executor.
-      // For now, log it for manual follow-through.
       botApi.log.info({ proposalKey: proposal.patternKey }, 'Proposal approved by user');
       break;
     case 'rejected':
@@ -61,7 +59,5 @@ export async function preChat({ text, jid }, botApi) {
     await botApi.send(replyText);
   }
 
-  // Return truthy to signal that the message was handled
-  // (this depends on how the plugin system processes preChat returns)
-  return { handled: true, reply: replyText };
+  return { handled: true };
 }

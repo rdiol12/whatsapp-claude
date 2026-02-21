@@ -251,8 +251,6 @@ const todayPhrases = [
   "today's notes",
   "show me today's summary",
   "daily notes",
-  "daily recap",
-  "recap of today",
   "today's conversation log",
   "what happened today?",
   "summarize today",
@@ -266,6 +264,19 @@ for (const phrase of todayPhrases) {
     expect(r.confidence).toBeAbove(CONFIDENCE_THRESHOLD);
   });
 }
+
+// "daily recap" and "recap of today" should route to recap, not today
+test('"daily recap" → recap', () => {
+  const r = route('daily recap');
+  expect(r).toBeTruthy();
+  expect(r.intent).toBe('recap');
+});
+
+test('"recap of today" → recap', () => {
+  const r = route('recap of today');
+  expect(r).toBeTruthy();
+  expect(r.intent).toBe('recap');
+});
 
 // ---------------------------------------------------------------------------
 // Natural language → /notes <date>
@@ -413,7 +424,7 @@ const fallThroughPhrases = [
   'Check the deploy status of my app',  // anti-pattern: status of something else
   'Can you review this pull request?',
   'I need to schedule a meeting for tomorrow',
-  'Create a cron job that runs every hour',  // asking to CREATE, not list
+  // 'Create a cron job that runs every hour' → now correctly routes to addcron intent
 ];
 
 for (const phrase of fallThroughPhrases) {

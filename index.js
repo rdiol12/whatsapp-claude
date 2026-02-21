@@ -26,7 +26,7 @@ const log = createLogger('bot');
 
 log.info('=== WhatsApp Claude Bot ===');
 log.info({ model: process.env.CLAUDE_MODEL || 'sonnet', persistentMode: config.persistentMode }, 'Config loaded');
-log.info({ allowedPhone: process.env.ALLOWED_PHONE || '972543260864' }, 'Allowed phone configured');
+log.info({ allowedPhone: config.allowedPhone ? config.allowedPhone.slice(0, 4) + '****' : 'NOT SET' }, 'Allowed phone configured');
 
 // Load conversation history from disk
 load();

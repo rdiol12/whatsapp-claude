@@ -37,4 +37,4 @@ All check timestamps tracked in `data/health-state.json`. Checks skip if not due
 ## Alerts
 
 Only alerts when something needs attention. Silent = healthy.
-Alerts go to Telegram (chat ID 6965182247).
+Alerts go to Telegram (chat ID from TELEGRAM_CHAT_ID env var).
