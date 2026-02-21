@@ -19,6 +19,7 @@ A personal AI assistant that lives in your WhatsApp. Built with [Baileys](https:
 - **Workflow engine** — Stateful multi-step workflows with pause/resume and user input gates
 - **User notes** — Persistent personal notes that get injected into Claude's context for personalized responses
 - **Proactive loop** — Periodic check for due reminders and flagged conditions, delivered automatically
+- **Agent loop** — Two-phase autonomous cycle: Phase 1 collects signals (stale goals, failing crons, deadlines, followups) with zero LLM cost; Phase 2 spawns Claude only when signals are found. Includes daily budget cap, consecutive spawn backoff, and adaptive timing
 
 ## Architecture
 
@@ -74,6 +75,7 @@ WhatsApp message
 | `goals.js` | Long-running objective tracking with milestones |
 | `proactive.js` | Periodic reminder and condition checking loop |
 | `user-notes.js` | Persistent personal notes (CRUD + context injection) |
+| `agent-loop.js` | Two-phase autonomous cycle — signal collection then Claude reasoning |
 | `ws-events.js` | Decoupled WebSocket event emitter for real-time dashboard updates |
 | `notify.js` | Telegram alert helper |
 | `metrics.js` | Telemetry and health snapshots |
@@ -142,6 +144,7 @@ The bot includes a web dashboard at `http://localhost:4242` with:
 - **Memory browser** — search and browse Vestige memories, ingest new facts
 - **Service health** — MCP connection, Telegram, plugin status
 - **Live updates** — WebSocket push every 5 seconds, real-time event toasts
+- **Agent loop monitor** (`/agent`) — real-time view of autonomous cycle status, signal collection, Claude spawns, costs, followups, and a live event log
 
 Start the dashboard separately:
 ```bash
