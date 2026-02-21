@@ -157,9 +157,14 @@ When `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are configured, the bot accepts
 | Command | Description |
 |---------|-------------|
 | `/status` | Bot status, uptime, queue stats |
+| `/crons` | List all cron jobs |
+| `/run <name>` | Trigger a cron job immediately |
+| `/cost [today\|week\|month]` | Cost report for the period |
+| `/memory <query>` | Search Vestige memories |
+| `/notes` | List saved user notes |
+| `/recap` | Daily activity summary |
 | `/shutdown` | Graceful shutdown |
-| `/cron` | List all cron jobs |
-| `/cron run <id>` | Trigger a cron job immediately |
+| `/help` | List all commands |
 
 ## Skills
 

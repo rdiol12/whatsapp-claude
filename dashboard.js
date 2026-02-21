@@ -18,7 +18,13 @@ const DASHBOARD_PORT = 4242;
 const DATA_DIR = join(process.env.HOME || process.env.USERPROFILE || '', 'whatsapp-claude', 'data');
 const PORT_FILE = join(DATA_DIR, '.ipc-port');
 const DASHBOARD_SECRET = process.env.DASHBOARD_SECRET || '';
-const SESSION_TOKEN = DASHBOARD_SECRET ? createHash('sha256').update(DASHBOARD_SECRET + ':dash-session').digest('hex') : '';
+// Random session token — changes each restart, invalidating old cookies (more secure than deterministic hash)
+const SESSION_TOKEN = DASHBOARD_SECRET ? randomBytes(32).toString('hex') : '';
+
+if (!DASHBOARD_SECRET) {
+  console.warn('WARNING: DASHBOARD_SECRET not set — dashboard has NO authentication!');
+  console.warn('Set DASHBOARD_SECRET in .env to enable login protection.');
+}
 
 // --- Login rate limiting ---
 const loginAttempts = new Map(); // ip → { count, lockedUntil }
@@ -114,7 +120,7 @@ function getIpcConfig() {
 function proxyToIpc(req, res, targetPath, targetMethod) {
   const ipcConfig = getIpcConfig();
   if (!ipcConfig) {
-    res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Bot offline' }));
     return;
   }
@@ -134,13 +140,12 @@ function proxyToIpc(req, res, targetPath, targetMethod) {
   }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
     });
     proxyRes.pipe(res);
   });
 
   proxyReq.on('error', () => {
-    res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Bot offline' }));
   });
   proxyReq.on('timeout', () => { proxyReq.destroy(); });
@@ -1894,13 +1899,9 @@ const HTML = `<!DOCTYPE html>
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
-  // CORS preflight
+  // CORS preflight (same-origin only — no cross-origin access)
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    });
+    res.writeHead(204);
     res.end();
     return;
   }
@@ -1972,6 +1973,12 @@ const server = http.createServer((req, res) => {
   // Proxy /api/* to bot-ipc
   if (url.pathname.startsWith('/api/')) {
     const ipcPath = url.pathname.slice(4); // strip /api → keep leading /
+    // Block path traversal
+    if (ipcPath.includes('..') || !ipcPath.startsWith('/')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid path' }));
+      return;
+    }
     const search = url.search || '';
     proxyToIpc(req, res, ipcPath + search, req.method);
     return;
@@ -2007,6 +2014,14 @@ server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/ws') {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Origin check — only allow same-origin WebSocket connections
+  const origin = req.headers.origin || '';
+  if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes('.ts.net')) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
   }
