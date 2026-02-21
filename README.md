@@ -19,7 +19,8 @@ A personal AI assistant that lives in your WhatsApp. Built with [Baileys](https:
 - **Workflow engine** — Stateful multi-step workflows with pause/resume and user input gates
 - **User notes** — Persistent personal notes that get injected into Claude's context for personalized responses
 - **Proactive loop** — Periodic check for due reminders and flagged conditions, delivered automatically
-- **Agent loop** — Two-phase autonomous cycle: Phase 1 collects signals (stale goals, failing crons, deadlines, followups) with zero LLM cost; Phase 2 spawns Claude only when signals are found. Includes daily budget cap, consecutive spawn backoff, and adaptive timing
+- **Agent loop** — Fully autonomous cycle running every 10 minutes. Phase 1 collects 14 signal types (stale/blocked goals, deadlines, failing crons, cost spikes, memory pressure, MCP disconnects, error spikes, conversation gaps, stale memories, low-engagement crons, goal work, compound escalation). Phase 2 spawns Claude to investigate, decide, act, and verify. Always-think mode spawns every 2nd cycle even with zero signals for reflection, goal advancement, and planning. Time-aware prompts (morning planning, evening review). Immediate 2-minute re-cycle after productive cycles. Self-correcting via agent-learning feedback loop
+- **Agent learning** — Tracks cycle outcomes, message engagement, and followup effectiveness. After 10+ cycles, injects self-correcting advice into agent prompts (reduce messages if low engagement, fewer followups if ineffective, focus on top signal types)
 
 ## Architecture
 
@@ -75,7 +76,8 @@ WhatsApp message
 | `goals.js` | Long-running objective tracking with milestones |
 | `proactive.js` | Periodic reminder and condition checking loop |
 | `user-notes.js` | Persistent personal notes (CRUD + context injection) |
-| `agent-loop.js` | Two-phase autonomous cycle — signal collection then Claude reasoning |
+| `agent-loop.js` | Fully autonomous cycle — 14 signals, always-think, goal progression, re-cycling |
+| `agent-learning.js` | Cycle outcome tracking, engagement analytics, self-correcting prompt injection |
 | `ws-events.js` | Decoupled WebSocket event emitter for real-time dashboard updates |
 | `notify.js` | Telegram alert helper |
 | `metrics.js` | Telemetry and health snapshots |
@@ -144,7 +146,7 @@ The bot includes a web dashboard at `http://localhost:4242` with:
 - **Memory browser** — search and browse Vestige memories, ingest new facts
 - **Service health** — MCP connection, Telegram, plugin status
 - **Live updates** — WebSocket push every 5 seconds, real-time event toasts
-- **Agent loop monitor** (`/agent`) — real-time view of autonomous cycle status, signal collection, Claude spawns, costs, followups, and a live event log
+- **Agent loop monitor** (`/agent`) — real-time view of autonomous cycle status, signal collection, Claude spawns, actions taken, goal creation events, learning stats (action ratio, engagement rate, cost per cycle, top signals), and a live event log
 
 Start the dashboard separately:
 ```bash
