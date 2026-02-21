@@ -15,7 +15,7 @@ import { createQueue } from './lib/queue.js';
 import { getState, setState } from './lib/state.js';
 import { searchMemories, smartIngest, setIntention } from './lib/mcp-gateway.js';
 import { Cron } from 'croner';
-import { addCron, deleteCron, toggleCron, listCrons, runCronNow } from './lib/crons.js';
+import { addCron, deleteCron, toggleCron, listCrons, runCronNow, setQueue as setCronQueue } from './lib/crons.js';
 import { generateRecap } from './lib/recap.js';
 import { getMessages, addMessage } from './lib/history.js';
 import { persistMetrics } from './lib/metrics.js';
@@ -65,6 +65,9 @@ const queue = createQueue({
   maxConcurrent: config.maxConcurrent,
   maxQueuePerUser: config.maxQueuePerUser,
 });
+
+// Wire queue into crons so they share concurrency slots with WhatsApp messages
+setCronQueue(queue);
 
 // Build botApi for plugins
 const botApi = {

@@ -161,6 +161,44 @@ await test('task error does not break chain', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// acquireSlot / releaseSlot (cron concurrency)
+// ---------------------------------------------------------------------------
+console.log('\n=== Slot API ===');
+
+await test('acquireSlot respects concurrency limit', async () => {
+  const q = createQueue({ maxConcurrent: 1 });
+  const order = [];
+
+  // Fill the slot with a user task
+  q.enqueue('u', async () => { order.push('user-start'); await delay(50); order.push('user-end'); });
+
+  // acquireSlot should wait until the slot is free
+  await delay(5); // let user task start
+  await q.acquireSlot();
+  order.push('slot-acquired');
+  q.releaseSlot();
+
+  expect(order[0]).toBe('user-start');
+  expect(order[1]).toBe('user-end');
+  expect(order[2]).toBe('slot-acquired');
+});
+
+await test('releaseSlot frees slot for next task', async () => {
+  const q = createQueue({ maxConcurrent: 1 });
+  let ran = false;
+
+  await q.acquireSlot();
+  // Enqueue a task that should wait
+  q.enqueue('u', async () => { ran = true; });
+  await delay(20);
+  expect(ran).toBe(false); // still waiting
+
+  q.releaseSlot();
+  await delay(50);
+  expect(ran).toBe(true); // now it ran
+});
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 console.log(`\n--- ${total} tests: ${passed} passed, ${failed} failed ---`);
