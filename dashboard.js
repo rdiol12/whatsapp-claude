@@ -619,6 +619,7 @@ const HTML = `<!DOCTYPE html>
     <button class="refresh-btn" onclick="refreshAll()">
       <span id="refreshIcon">&circlearrowright;</span> <span>Refresh</span>
     </button>
+    <a href="/agent" class="refresh-btn" style="text-decoration:none" title="Agent Loop Monitor">&loz; Agent</a>
     <a href="/logout" class="refresh-btn" style="text-decoration:none;font-size:10px;padding:4px 9px" title="Sign out">&raquo; Logout</a>
     <button class="burger" id="burgerBtn" onclick="toggleMobileNav()">
       <span></span><span></span><span></span>
@@ -1894,6 +1895,575 @@ const HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// --- Agent Page HTML ---
+
+const AGENT_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0f">
+<title>Agent Loop Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🔄</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;500;700;800&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #16161f;
+    --border: #1e1e2e;
+    --border2: #2a2a3e;
+    --text: #e2e2f0;
+    --text2: #8888aa;
+    --text3: #444466;
+    --accent: #7c6af7;
+    --accent2: #a78bfa;
+    --green: #22d3a0;
+    --yellow: #f59e0b;
+    --red: #f43f5e;
+    --cyan: #22d3ee;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.35;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 12px; }
+
+  .logo {
+    width: 30px; height: 30px;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display);
+    font-weight: 800; font-size: 15px; color: white;
+    box-shadow: 0 0 16px rgba(124,106,247,0.35);
+  }
+
+  .header-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .header-sub { color: var(--text3); font-size: 10px; margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+
+  .back-link {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text2); padding: 5px 12px; border-radius: var(--radius);
+    cursor: pointer; font-family: var(--font-mono); font-size: 11px;
+    transition: all 0.15s; text-decoration: none; display: flex; align-items: center; gap: 5px;
+  }
+  .back-link:hover { border-color: var(--accent); color: var(--accent2); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: calc(100vh - 61px);
+    overflow: hidden;
+  }
+
+  .panel {
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .panel:first-child { border-right: 1px solid var(--border); }
+
+  .panel::-webkit-scrollbar { width: 5px; }
+  .panel::-webkit-scrollbar-track { background: transparent; }
+  .panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .panel::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    animation: fadeUp 0.3s ease;
+  }
+
+  .card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .card-body { padding: 14px; }
+
+  /* Status badge */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-green { background: rgba(34,211,160,0.15); color: var(--green); }
+  .badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .badge-red { background: rgba(244,63,94,0.15); color: var(--red); }
+  .badge-gray { background: rgba(136,136,170,0.1); color: var(--text2); }
+
+  /* Metrics grid */
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .metric-label { color: var(--text3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric-value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .metric-value.accent { color: var(--accent2); }
+  .metric-value.green { color: var(--green); }
+  .metric-value.yellow { color: var(--yellow); }
+  .metric-value.cyan { color: var(--cyan); }
+
+  /* Signal list */
+  .signal-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .signal-item {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--text3);
+  }
+  .signal-item.high { border-left-color: var(--red); }
+  .signal-item.medium { border-left-color: var(--yellow); }
+  .signal-item.low { border-left-color: var(--text3); }
+
+  .signal-type { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+  .signal-summary { font-size: 12px; margin-top: 2px; }
+
+  /* Followup list */
+  .followup-item {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .followup-topic { color: var(--text); }
+  .followup-time { color: var(--text3); font-size: 10px; margin-top: 2px; }
+
+  /* Event log */
+  .event-log {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+  }
+
+  .event-log::-webkit-scrollbar { width: 5px; }
+  .event-log::-webkit-scrollbar-track { background: transparent; }
+  .event-log::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  .event-entry {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    animation: fadeUp 0.2s ease;
+  }
+
+  .event-icon {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .event-icon.start { background: rgba(124,106,247,0.2); color: var(--accent2); }
+  .event-icon.signals { background: rgba(34,211,238,0.2); color: var(--cyan); }
+  .event-icon.skip { background: rgba(136,136,170,0.15); color: var(--text2); }
+  .event-icon.phase2 { background: rgba(245,158,11,0.2); color: var(--yellow); }
+  .event-icon.complete { background: rgba(34,211,160,0.2); color: var(--green); }
+  .event-icon.error { background: rgba(244,63,94,0.2); color: var(--red); }
+
+  .event-content { flex: 1; min-width: 0; }
+  .event-title { font-size: 12px; font-weight: 500; }
+  .event-detail { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .event-time { font-size: 10px; color: var(--text3); flex-shrink: 0; }
+
+  .empty-state { color: var(--text3); font-size: 12px; text-align: center; padding: 24px; }
+
+  .status-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 7px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .status-dot.stopped { background: var(--red); box-shadow: 0 0 7px var(--red); animation: none; }
+  .status-dot.idle { background: var(--yellow); box-shadow: 0 0 7px var(--yellow); }
+
+  .timing-info { color: var(--text3); font-size: 11px; margin-top: 8px; }
+
+  .clear-btn {
+    background: none; border: 1px solid var(--border);
+    color: var(--text3); padding: 2px 8px; border-radius: 4px;
+    cursor: pointer; font-family: var(--font-mono); font-size: 10px;
+    transition: all 0.15s;
+  }
+  .clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .panel:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+    .event-log { max-height: 60vh; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="logo">&loz;</div>
+    <div>
+      <div class="header-title">Agent Loop Monitor</div>
+      <div class="header-sub">two-phase autonomous cycle</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <a href="/" class="back-link">&larr; Dashboard</a>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Left panel: Status, Signals, Followups -->
+  <div class="panel">
+
+    <div class="card">
+      <div class="card-header">Loop Status</div>
+      <div class="card-body">
+        <div class="status-row">
+          <div class="status-dot" id="loopDot"></div>
+          <span id="loopStatusLabel" class="badge badge-gray">loading</span>
+          <span id="loopMode" style="color:var(--text3);font-size:10px;margin-left:auto"></span>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Cycles</div>
+            <div class="metric-value accent" id="metCycles">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Daily Cost</div>
+            <div class="metric-value green" id="metCost">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Interval</div>
+            <div class="metric-value cyan" id="metInterval">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Consec. Spawns</div>
+            <div class="metric-value yellow" id="metSpawns">-</div>
+          </div>
+        </div>
+        <div class="timing-info" id="timingInfo"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Last Signals <span id="signalCount" class="badge badge-gray">0</span></div>
+      <div class="card-body">
+        <div class="signal-list" id="signalList">
+          <div class="empty-state">No signals collected yet</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Pending Followups <span id="followupCount" class="badge badge-gray">0</span></div>
+      <div class="card-body">
+        <div id="followupList">
+          <div class="empty-state">No followups queued</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right panel: Event Log -->
+  <div class="panel">
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <div class="card-header">
+        Event Log
+        <button class="clear-btn" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="card-body" style="flex:1;padding:10px">
+        <div class="event-log" id="eventLog">
+          <div class="empty-state">Waiting for agent cycle events&hellip;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MAX_LOG_ENTRIES = 100;
+const eventLog = [];
+let wsConn = null;
+let wsRetry = 0;
+
+// --- Event type config ---
+const EVENT_CONFIG = {
+  'agent:cycle:start':    { icon: '&#9654;', cls: 'start',    title: 'Cycle Started' },
+  'agent:cycle:signals':  { icon: '&#9733;', cls: 'signals',  title: 'Signals Collected' },
+  'agent:cycle:skip':     { icon: '&#8212;', cls: 'skip',     title: 'Phase 2 Skipped' },
+  'agent:cycle:phase2':   { icon: '&#9881;', cls: 'phase2',   title: 'Claude Spawn' },
+  'agent:cycle:complete': { icon: '&#10003;', cls: 'complete', title: 'Cycle Complete' },
+  'agent:cycle:error':    { icon: '&#10007;', cls: 'error',   title: 'Cycle Error' },
+};
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('en-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Jerusalem' });
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return Math.round(diff / 1000) + 's ago';
+  if (diff < 3600000) return Math.round(diff / 60000) + 'm ago';
+  return Math.round(diff / 3600000) + 'h ago';
+}
+
+function eventDetail(event, data) {
+  switch (event) {
+    case 'agent:cycle:start': return 'Cycle #' + (data.cycleCount || '?');
+    case 'agent:cycle:signals':
+      return data.signalCount + ' signal' + (data.signalCount !== 1 ? 's' : '') +
+        (data.signals ? ': ' + data.signals.map(function(s) { return s.type; }).join(', ') : '');
+    case 'agent:cycle:skip': return 'Reason: ' + (data.reason || 'unknown').replace(/_/g, ' ');
+    case 'agent:cycle:phase2': return data.signalCount + ' signals, prompt ' + (data.promptLen || 0) + ' chars';
+    case 'agent:cycle:complete':
+      return '$' + (data.costUsd || 0).toFixed(4) + ' | ' + (data.waMessageCount || 0) + ' msg | ' +
+        (data.followupCount || 0) + ' followup | next ' + (data.nextCycleMinutes || '?') + 'min';
+    case 'agent:cycle:error': return data.error || 'Unknown error';
+    default: return JSON.stringify(data);
+  }
+}
+
+// --- Update left panel from state ---
+function updateStatus(al) {
+  if (!al) return;
+
+  // Status dot + badge
+  var dot = document.getElementById('loopDot');
+  var label = document.getElementById('loopStatusLabel');
+  if (al.running) {
+    if (al.cycleRunning) {
+      dot.className = 'status-dot';
+      label.textContent = 'active';
+      label.className = 'badge badge-green';
+    } else {
+      dot.className = 'status-dot idle';
+      label.textContent = 'idle';
+      label.className = 'badge badge-yellow';
+    }
+  } else {
+    dot.className = 'status-dot stopped';
+    label.textContent = 'stopped';
+    label.className = 'badge badge-red';
+  }
+
+  document.getElementById('loopMode').textContent = al.mode || '';
+
+  // Metrics
+  document.getElementById('metCycles').textContent = al.cycleCount || 0;
+  document.getElementById('metCost').textContent = '$' + (al.dailyCost || '0.00');
+  document.getElementById('metInterval').textContent = (al.intervalMin || 0) + 'min';
+  document.getElementById('metSpawns').textContent = al.consecutiveSpawns || 0;
+
+  // Timing
+  var parts = [];
+  if (al.lastCycleAt) parts.push('Last cycle: ' + timeAgo(al.lastCycleAt));
+  if (al.lastClaudeSpawnAt) parts.push('Last spawn: ' + timeAgo(al.lastClaudeSpawnAt));
+  if (al.dailyBudget) parts.push('Budget: $' + al.dailyCost + ' / $' + al.dailyBudget);
+  document.getElementById('timingInfo').textContent = parts.join(' &middot; ');
+  document.getElementById('timingInfo').innerHTML = parts.join(' &middot; ');
+
+  // Signals
+  var sigs = al.lastSignals || [];
+  document.getElementById('signalCount').textContent = sigs.length;
+  var sl = document.getElementById('signalList');
+  if (sigs.length === 0) {
+    sl.innerHTML = '<div class="empty-state">No signals collected yet</div>';
+  } else {
+    sl.innerHTML = sigs.map(function(s) {
+      return '<div class="signal-item ' + (s.urgency || 'low') + '">' +
+        '<div class="signal-type">' + s.type + ' <span class="badge badge-' +
+        (s.urgency === 'high' ? 'red' : s.urgency === 'medium' ? 'yellow' : 'gray') + '">' +
+        s.urgency + '</span></div>' +
+        '<div class="signal-summary">' + escHtml(s.summary) + '</div></div>';
+    }).join('');
+  }
+
+  // Followups (from WS state we only get count, detail comes from REST)
+  var fc = typeof al.pendingFollowups === 'number' ? al.pendingFollowups : (al.pendingFollowups || []).length;
+  document.getElementById('followupCount').textContent = fc;
+}
+
+function updateFollowupsDetail(followups) {
+  var fl = document.getElementById('followupList');
+  if (!followups || followups.length === 0) {
+    fl.innerHTML = '<div class="empty-state">No followups queued</div>';
+    return;
+  }
+  fl.innerHTML = followups.map(function(f) {
+    return '<div class="followup-item"><div class="followup-topic">' + escHtml(f.topic) + '</div>' +
+      '<div class="followup-time">' + (f.createdAt ? timeAgo(new Date(f.createdAt).toISOString()) : '') + '</div></div>';
+  }).join('');
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// --- Event log rendering ---
+function addEvent(event, ts, data) {
+  var cfg = EVENT_CONFIG[event];
+  if (!cfg) return;
+
+  eventLog.unshift({ event: event, ts: ts, data: data });
+  if (eventLog.length > MAX_LOG_ENTRIES) eventLog.length = MAX_LOG_ENTRIES;
+
+  renderLog();
+}
+
+function renderLog() {
+  var el = document.getElementById('eventLog');
+  if (eventLog.length === 0) {
+    el.innerHTML = '<div class="empty-state">Waiting for agent cycle events&hellip;</div>';
+    return;
+  }
+  el.innerHTML = eventLog.map(function(e) {
+    var cfg = EVENT_CONFIG[e.event] || { icon: '?', cls: 'skip', title: e.event };
+    return '<div class="event-entry">' +
+      '<div class="event-icon ' + cfg.cls + '">' + cfg.icon + '</div>' +
+      '<div class="event-content">' +
+        '<div class="event-title">' + cfg.title + '</div>' +
+        '<div class="event-detail">' + escHtml(eventDetail(e.event, e.data)) + '</div>' +
+      '</div>' +
+      '<div class="event-time">' + formatTime(e.ts) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function clearLog() {
+  eventLog.length = 0;
+  renderLog();
+}
+
+// --- WebSocket ---
+function connectWs() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsConn = new WebSocket(proto + '//' + location.host + '/ws');
+
+  wsConn.onopen = function() {
+    wsRetry = 0;
+  };
+
+  wsConn.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.type === 'state' && msg.data && msg.data.agentLoop) {
+        updateStatus(msg.data.agentLoop);
+      }
+      if (msg.type === 'event' && msg.event && msg.event.startsWith('agent:cycle:')) {
+        addEvent(msg.event, msg.ts, msg.data || {});
+      }
+    } catch (err) { /* ignore parse errors */ }
+  };
+
+  wsConn.onclose = function() {
+    var delay = Math.min(1000 * Math.pow(2, wsRetry), 30000);
+    wsRetry++;
+    setTimeout(connectWs, delay);
+  };
+
+  wsConn.onerror = function() { };
+}
+
+// --- REST fallback for detail (every 30s) ---
+function loadDetail() {
+  fetch('/api/agent-loop')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      updateStatus(data);
+      if (Array.isArray(data.pendingFollowups)) {
+        updateFollowupsDetail(data.pendingFollowups);
+      }
+    })
+    .catch(function() { /* silent */ });
+}
+
+// --- Init ---
+connectWs();
+loadDetail();
+setInterval(loadDetail, 30000);
+</script>
+</body>
+</html>`;
+
 // --- HTTP Server ---
 
 const server = http.createServer((req, res) => {
@@ -1967,6 +2537,13 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(HTML);
+    return;
+  }
+
+  // Agent loop monitor page
+  if (url.pathname === '/agent') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(AGENT_HTML);
     return;
   }
 

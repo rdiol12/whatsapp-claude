@@ -201,7 +201,7 @@ startProactiveLoop(async (text) => {
 startAgentLoop(async (text) => {
   if (botApi.send) await botApi.send(text);
   else log.warn({ text: text.slice(0, 100) }, 'Agent loop message dropped (no send function)');
-});
+}, queue);
 
 // Recover interrupted tasks from previous session
 const activeTask = getState('active-task');
