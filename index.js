@@ -26,6 +26,17 @@ const log = createLogger('bot');
 
 log.info('=== WhatsApp Claude Bot ===');
 log.info({ model: process.env.CLAUDE_MODEL || 'sonnet', persistentMode: config.persistentMode }, 'Config loaded');
+
+// Startup config validation — warn on missing critical vars
+if (!config.allowedPhone) {
+  log.warn('SECURITY: ALLOWED_PHONE not set — bot will accept messages from ANY number');
+}
+if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+  log.warn('Telegram alerts disabled — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set');
+}
+if (!process.env.DASHBOARD_SECRET) {
+  log.warn('SECURITY: DASHBOARD_SECRET not set — dashboard has NO authentication');
+}
 log.info({ allowedPhone: config.allowedPhone ? config.allowedPhone.slice(0, 4) + '****' : 'NOT SET' }, 'Allowed phone configured');
 
 // Load conversation history from disk
@@ -174,6 +185,13 @@ startProactiveLoop(async (text) => {
   if (botApi.send) await botApi.send(text);
   else log.warn({ text: text.slice(0, 100) }, 'Proactive message dropped (no send function)');
 });
+
+// Recover interrupted tasks from previous session
+const activeTask = getState('active-task');
+if (activeTask.status === 'planning' || activeTask.status === 'executing') {
+  log.warn({ taskId: activeTask.taskId, status: activeTask.status }, 'Found interrupted task from previous session');
+  setState('active-task', { ...activeTask, status: 'interrupted', interruptedAt: Date.now() });
+}
 
 // Bootstrap: ensure vestige maintenance cron exists (weekly gc + consolidate)
 if (!listCrons().some(j => j.id === 'vestige-gc' || j.name === 'vestige-gc')) {
