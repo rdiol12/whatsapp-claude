@@ -15,6 +15,7 @@ import { createLogger } from './lib/logger.js';
 import { init as initMcpGateway, close as closeMcpGateway } from './lib/mcp-gateway.js';
 import { loadPlugins, shutdownPlugins } from './lib/plugins.js';
 import { startProactiveLoop, stopProactiveLoop } from './lib/proactive.js';
+import { startAgentLoop, stopAgentLoop } from './lib/agent-loop.js';
 import { startIpcServer, stopIpcServer } from './lib/bot-ipc.js';
 import { startTelegramPolling, stopTelegramPolling } from './lib/telegram.js';
 import { createQueue } from './lib/queue.js';
@@ -113,6 +114,7 @@ async function onShutdown(signal) {
   const t1 = Date.now();
   stopTelegramPolling();
   stopProactiveLoop();
+  stopAgentLoop();
   stopIpcServer();
   recapCron.stop();
   log.info({ ms: Date.now() - t1 }, 'Shutdown: stopped accepting new work');
@@ -193,6 +195,12 @@ initWorkflows({
 startProactiveLoop(async (text) => {
   if (botApi.send) await botApi.send(text);
   else log.warn({ text: text.slice(0, 100) }, 'Proactive message dropped (no send function)');
+});
+
+// Start autonomous agent loop (ReAct cycle with native tool calling)
+startAgentLoop(async (text) => {
+  if (botApi.send) await botApi.send(text);
+  else log.warn({ text: text.slice(0, 100) }, 'Agent loop message dropped (no send function)');
 });
 
 // Recover interrupted tasks from previous session
