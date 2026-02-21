@@ -2238,6 +2238,31 @@ const AGENT_HTML = `<!DOCTYPE html>
       </div>
     </div>
 
+    <div class="card" id="learningCard" style="display:none">
+      <div class="card-header">Learning Stats <span id="learningCycles" class="badge badge-gray">0</span></div>
+      <div class="card-body">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Action Ratio</div>
+            <div class="metric-value accent" id="metActionRatio">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Avg Cost</div>
+            <div class="metric-value green" id="metAvgCost">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Engagement</div>
+            <div class="metric-value cyan" id="metEngagement">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Followup Eff.</div>
+            <div class="metric-value yellow" id="metFollowupEff">-</div>
+          </div>
+        </div>
+        <div id="topSignals" style="margin-top:10px;color:var(--text3);font-size:11px"></div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Right panel: Event Log -->
@@ -2264,12 +2289,14 @@ let wsRetry = 0;
 
 // --- Event type config ---
 const EVENT_CONFIG = {
-  'agent:cycle:start':    { icon: '&#9654;', cls: 'start',    title: 'Cycle Started' },
-  'agent:cycle:signals':  { icon: '&#9733;', cls: 'signals',  title: 'Signals Collected' },
-  'agent:cycle:skip':     { icon: '&#8212;', cls: 'skip',     title: 'Phase 2 Skipped' },
-  'agent:cycle:phase2':   { icon: '&#9881;', cls: 'phase2',   title: 'Claude Spawn' },
-  'agent:cycle:complete': { icon: '&#10003;', cls: 'complete', title: 'Cycle Complete' },
-  'agent:cycle:error':    { icon: '&#10007;', cls: 'error',   title: 'Cycle Error' },
+  'agent:cycle:start':        { icon: '&#9654;', cls: 'start',    title: 'Cycle Started' },
+  'agent:cycle:signals':      { icon: '&#9733;', cls: 'signals',  title: 'Signals Collected' },
+  'agent:cycle:skip':         { icon: '&#8212;', cls: 'skip',     title: 'Phase 2 Skipped' },
+  'agent:cycle:phase2':       { icon: '&#9881;', cls: 'phase2',   title: 'Claude Spawn' },
+  'agent:cycle:complete':     { icon: '&#10003;', cls: 'complete', title: 'Cycle Complete' },
+  'agent:cycle:error':        { icon: '&#10007;', cls: 'error',   title: 'Cycle Error' },
+  'agent:cycle:actions':      { icon: '&#9889;', cls: 'complete', title: 'Actions Taken' },
+  'agent:cycle:goal_created': { icon: '&#9733;', cls: 'signals',  title: 'Goal Created' },
 };
 
 function formatTime(ts) {
@@ -2296,6 +2323,8 @@ function eventDetail(event, data) {
       return '$' + (data.costUsd || 0).toFixed(4) + ' | ' + (data.waMessageCount || 0) + ' msg | ' +
         (data.followupCount || 0) + ' followup | next ' + (data.nextCycleMinutes || '?') + 'min';
     case 'agent:cycle:error': return data.error || 'Unknown error';
+    case 'agent:cycle:actions': return (data.actions || []).join('; ') || 'No actions';
+    case 'agent:cycle:goal_created': return (data.title || 'Untitled') + ' (id: ' + (data.goalId || '?') + ')';
     default: return JSON.stringify(data);
   }
 }
@@ -2413,6 +2442,24 @@ function clearLog() {
   renderLog();
 }
 
+// --- Learning Stats ---
+function updateLearning(al) {
+  if (!al) return;
+  var card = document.getElementById('learningCard');
+  if (al.totalCycles > 0) {
+    card.style.display = '';
+    document.getElementById('learningCycles').textContent = al.totalCycles + ' cycles';
+    document.getElementById('metActionRatio').textContent = al.signalToActionRatio || '0';
+    document.getElementById('metAvgCost').textContent = '$' + (al.avgCostPerCycle || '0');
+    document.getElementById('metEngagement').textContent = al.engagementRate !== null ? al.engagementRate + '%' : 'n/a';
+    document.getElementById('metFollowupEff').textContent = al.followupEffectiveness !== null ? al.followupEffectiveness + '%' : 'n/a';
+    var topSigs = (al.topSignalTypes || []).slice(0, 3).map(function(t) { return t.type + '(' + t.count + ')'; }).join(', ');
+    document.getElementById('topSignals').textContent = topSigs ? 'Top signals: ' + topSigs : '';
+  } else {
+    card.style.display = 'none';
+  }
+}
+
 // --- WebSocket ---
 function connectWs() {
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2427,6 +2474,9 @@ function connectWs() {
       var msg = JSON.parse(e.data);
       if (msg.type === 'state' && msg.data && msg.data.agentLoop) {
         updateStatus(msg.data.agentLoop);
+      }
+      if (msg.type === 'state' && msg.data && msg.data.agentLearning) {
+        updateLearning(msg.data.agentLearning);
       }
       if (msg.type === 'event' && msg.event && msg.event.startsWith('agent:cycle:')) {
         addEvent(msg.event, msg.ts, msg.data || {});
@@ -2453,6 +2503,10 @@ function loadDetail() {
         updateFollowupsDetail(data.pendingFollowups);
       }
     })
+    .catch(function() { /* silent */ });
+  fetch('/api/agent-learning')
+    .then(function(r) { return r.json(); })
+    .then(function(data) { updateLearning(data); })
     .catch(function() { /* silent */ });
 }
 
