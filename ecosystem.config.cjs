@@ -15,6 +15,9 @@ module.exports = {
     time: true,
     env: {
       NODE_ENV: 'production',
+      LANG: 'en_US.UTF-8',
+      PYTHONIOENCODING: 'utf-8',
+      CHCP: '65001',
     },
   }],
 };

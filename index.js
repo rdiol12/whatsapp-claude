@@ -1,3 +1,9 @@
+// Force UTF-8 console on Windows so Hebrew renders correctly in logs
+import { execSync } from 'child_process';
+if (process.platform === 'win32') {
+  try { execSync('chcp 65001', { stdio: 'ignore' }); } catch {}
+}
+
 import 'dotenv/config';
 import { load, flushHistory } from './lib/history.js';
 import { load as loadCrons, initScheduler } from './lib/crons.js';
