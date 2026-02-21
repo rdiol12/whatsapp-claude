@@ -12,10 +12,10 @@ import { createHash, randomBytes } from 'crypto';
 import { config } from 'dotenv';
 
 // Load .env for DASHBOARD_SECRET
-config({ path: join(process.env.HOME || process.env.USERPROFILE || '', 'whatsapp-claude', '.env') });
+config({ path: join(process.env.HOME || process.env.USERPROFILE || '', 'sela', '.env') });
 
 const DASHBOARD_PORT = 4242;
-const DATA_DIR = join(process.env.HOME || process.env.USERPROFILE || '', 'whatsapp-claude', 'data');
+const DATA_DIR = join(process.env.HOME || process.env.USERPROFILE || '', 'sela', 'data');
 const PORT_FILE = join(DATA_DIR, '.ipc-port');
 const DASHBOARD_SECRET = process.env.DASHBOARD_SECRET || '';
 // Random session token — changes each restart, invalidating old cookies (more secure than deterministic hash)
@@ -610,7 +610,7 @@ const HTML = `<!DOCTYPE html>
     <div class="logo">A</div>
     <div>
       <div class="header-title">Agent Dashboard</div>
-      <div class="header-sub">whatsapp-claude control center</div>
+      <div class="header-sub">sela control center</div>
     </div>
   </div>
   <div class="header-right">

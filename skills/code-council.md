@@ -9,7 +9,7 @@ Also runs weekly via cron (Sunday 22:00 Israel time).
 
 ## Audit Process
 
-You are performing a 3-panel code council review of the WhatsApp Claude bot at ~/whatsapp-claude/. Read ALL source files in lib/ and index.js, then produce a single structured report covering three perspectives:
+You are performing a 3-panel code council review of Sela at ~/sela/. Read ALL source files in lib/ and index.js, then produce a single structured report covering three perspectives:
 
 ### Panel 1: Security Auditor
 Review for:
@@ -72,11 +72,11 @@ BUGS: [count]
 3. ...
 ```
 
-Keep the WhatsApp output concise (under 3000 chars). Save the full detailed report to ~/whatsapp-claude/workspace/council-report-YYYY-MM-DD.md using the Write tool.
+Keep the WhatsApp output concise (under 3000 chars). Save the full detailed report to ~/sela/workspace/council-report-YYYY-MM-DD.md using the Write tool.
 
 ## Comparison with Previous Reports
 
-Before writing the report, check if a previous council report exists in ~/whatsapp-claude/workspace/ (glob for council-report-*.md). If found, compare findings: note what was fixed since last time, what is new, and what persists. Include a "Delta" section.
+Before writing the report, check if a previous council report exists in ~/sela/workspace/ (glob for council-report-*.md). If found, compare findings: note what was fixed since last time, what is new, and what persists. Include a "Delta" section.
 
 ## Alerts
 

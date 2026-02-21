@@ -1,4 +1,4 @@
-# WhatsApp Claude Bot
+# Sela
 
 A personal AI assistant that lives in your WhatsApp. Built with [Baileys](https://github.com/WhiskeySockets/Baileys) for WhatsApp connectivity and Claude (via the official CLI) for intelligence. Designed as a single-user, always-on companion that handles everything from casual conversation to complex multi-step tasks — all from your phone.
 
@@ -89,8 +89,8 @@ WhatsApp message
 ## Installation
 
 ```bash
-git clone <repo-url> whatsapp-claude
-cd whatsapp-claude
+git clone <repo-url> sela
+cd sela
 npm install
 ```
 
@@ -128,7 +128,7 @@ On first launch, a QR code will appear in the terminal. Scan it with WhatsApp to
 ### Running with PM2
 
 ```bash
-pm2 start index.js --name whatsapp-claude --max-memory-restart 512M
+pm2 start index.js --name sela --max-memory-restart 512M
 pm2 save
 ```
 
@@ -187,7 +187,7 @@ Skill files in `skills/` are markdown documents that Claude loads on demand when
 ## Project Structure
 
 ```
-whatsapp-claude/
+sela/
 ├── index.js              # Entry point — boots all subsystems
 ├── dashboard.js          # Web dashboard server (port 4242)
 ├── SOUL.md               # Bot personality definition

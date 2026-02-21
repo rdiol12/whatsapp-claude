@@ -6,7 +6,7 @@
     },
     "bot-ops": {
       "command": "node",
-      "args": ["/path/to/whatsapp-claude/lib/bot-mcp-server.js"]
+      "args": ["/path/to/sela/lib/bot-mcp-server.js"]
     }
   }
 }

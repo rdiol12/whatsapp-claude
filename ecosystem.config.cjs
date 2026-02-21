@@ -1,8 +1,8 @@
 module.exports = {
   apps: [{
-    name: 'whatsapp-claude',
+    name: 'sela',
     script: 'index.js',
-    cwd: require('path').resolve(require('os').homedir(), 'whatsapp-claude'),
+    cwd: require('path').resolve(require('os').homedir(), 'sela'),
     node_args: '--experimental-vm-modules',
     max_memory_restart: '512M',
     kill_timeout: 5000,

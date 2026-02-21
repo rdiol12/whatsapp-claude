@@ -24,7 +24,7 @@ import config from './lib/config.js';
 
 const log = createLogger('bot');
 
-log.info('=== WhatsApp Claude Bot ===');
+log.info('=== Sela ===');
 log.info({ model: process.env.CLAUDE_MODEL || 'sonnet', persistentMode: config.persistentMode }, 'Config loaded');
 
 // Startup config validation — warn on missing critical vars
@@ -143,7 +143,7 @@ async function onShutdown(signal) {
   log.info({ ms: Date.now() - t5 }, 'Shutdown: MCP closed');
 
   // 6. Send notification
-  notify(`*WhatsApp Claude Bot* shutting down (${signal}).`);
+  notify(`*Sela* shutting down (${signal}).`);
   log.info({ totalMs: Date.now() - shutdownStart }, 'Shutdown complete');
 
   // Give Telegram API a moment to send
