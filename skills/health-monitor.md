@@ -1,3 +1,11 @@
+---
+name: "Health Monitor"
+description: "Automated health monitoring with scheduled daily/weekly/monthly checks. Silent when all systems are healthy, alerts on issues."
+keywords: ["health", "monitoring", "checks", "system", "status", "alerts", "automated", "diagnostics"]
+category: "operations"
+tags: ["monitoring", "scheduled", "system-health"]
+---
+
 # Health Monitor
 
 Automated health monitoring with daily/weekly/monthly checks. Philosophy: silence means everything is fine.
@@ -37,4 +45,4 @@ All check timestamps tracked in `data/health-state.json`. Checks skip if not due
 ## Alerts
 
 Only alerts when something needs attention. Silent = healthy.
-Alerts go to Telegram (chat ID 6965182247).
+Alerts go to Telegram (chat ID from TELEGRAM_CHAT_ID env var).

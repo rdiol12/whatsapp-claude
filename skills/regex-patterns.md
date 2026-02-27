@@ -1,6 +1,9 @@
 ---
-name: regex-patterns
-description: Practical regex patterns across languages and use cases. Use when validating input (email, URL, IP), parsing log lines, extracting data from text, refactoring code with search-and-replace, or debugging why a regex doesn't match.
+name: "Regex Patterns"
+description: "Practical regular expression cookbook with patterns for validation, parsing, extraction, and refactoring across multiple languages."
+keywords: ["regex", "patterns", "validation", "parsing", "extraction", "search-replace", "debugging", "reference"]
+category: "reference"
+tags: ["reference", "development", "utility"]
 metadata: {"clawdbot":{"emoji":"🔤","requires":{"anyBins":["grep","python3","node"]},"os":["linux","darwin","win32"]}}
 ---
 

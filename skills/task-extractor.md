@@ -1,3 +1,11 @@
+---
+name: "Task Extractor"
+description: "Extracts action items from meetings and transcripts, gets approval, and creates tasks in Todoist or other systems."
+keywords: ["task", "extraction", "meetings", "transcripts", "action-items", "productivity", "automation", "todoist"]
+category: "productivity"
+tags: ["automation", "productivity", "extraction"]
+---
+
 # Task Extractor
 
 Extract action items from meetings/transcripts, get approval, create tasks.

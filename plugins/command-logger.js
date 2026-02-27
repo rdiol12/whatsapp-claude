@@ -10,7 +10,7 @@ export const meta = {
   priority: 90,
 };
 
-const STATE_KEY = 'plugin:command-logger';
+const STATE_KEY = 'plugin_command-logger';
 
 export async function onStartup(botApi) {
   const stats = botApi.state.get(STATE_KEY);
@@ -21,18 +21,22 @@ export async function onStartup(botApi) {
 export function onMessage({ text }, botApi) {
   if (!text || !text.startsWith('/')) return;
 
-  const cmd = text.split(/\s/)[0].toLowerCase();
-  const stats = botApi.state.get(STATE_KEY);
+  try {
+    const cmd = text.split(/\s/)[0].toLowerCase();
+    const stats = botApi.state.get(STATE_KEY) || {};
 
-  // Increment per-command counter
-  const counts = stats.commands || {};
-  counts[cmd] = (counts[cmd] || 0) + 1;
+    // Increment per-command counter
+    const counts = stats.commands || {};
+    counts[cmd] = (counts[cmd] || 0) + 1;
 
-  botApi.state.set(STATE_KEY, {
-    commands: counts,
-    totalCommands: (stats.totalCommands || 0) + 1,
-    lastCommand: { cmd, ts: Date.now() },
-  });
+    botApi.state.set(STATE_KEY, {
+      commands: counts,
+      totalCommands: (stats.totalCommands || 0) + 1,
+      lastCommand: { cmd, ts: Date.now() },
+    });
+  } catch (err) {
+    botApi.log.warn({ err: err.message }, '[command-logger] Failed to log command');
+  }
 }
 
 export async function onCommand(cmd, text, botApi) {

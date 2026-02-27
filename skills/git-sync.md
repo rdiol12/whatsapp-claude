@@ -1,3 +1,11 @@
+---
+name: "Git Auto-Sync"
+description: "Automated hourly commits, tags, and pushes with built-in security scanning to detect and prevent credential leaks."
+keywords: ["git", "sync", "commit", "push", "automation", "version-control", "security", "scanning"]
+category: "operations"
+tags: ["automated", "security", "git", "scheduled"]
+---
+
 # Git Auto-Sync
 
 Hourly auto-commit, tag, and push with security scanning.

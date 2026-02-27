@@ -1,3 +1,11 @@
+---
+name: "AI Content Humanizer"
+description: "Detects AI artifacts in text and rewrites content to sound authentically human-written."
+keywords: ["humanizer", "content", "rewrite", "ai-detection", "writing", "style", "tone", "authenticity"]
+category: "content"
+tags: ["writing", "editing", "transformation"]
+---
+
 # AI Content Humanizer
 
 Detects AI artifacts and rewrites text to sound human.

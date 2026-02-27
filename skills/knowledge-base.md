@@ -1,3 +1,11 @@
+---
+name: "Knowledge Base"
+description: "Semantic search and retrieval system (RAG) that saves content and generates AI-powered answers from your personal knowledge."
+keywords: ["knowledge-base", "search", "rag", "retrieval", "memory", "ai", "answers", "semantic"]
+category: "utility"
+tags: ["memory", "search", "ai-powered"]
+---
+
 # Knowledge Base (RAG)
 
 Save anything, recall it later with semantic search and AI-generated answers.

@@ -1,3 +1,11 @@
+---
+name: "Prompt Engineering Guide"
+description: "Practical techniques for writing effective prompts for Claude models, based on real-world discoveries and best practices."
+keywords: ["prompt", "engineering", "claude", "techniques", "llm", "ai", "writing", "guidance"]
+category: "reference"
+tags: ["guide", "best-practices", "ai-techniques"]
+---
+
 # Prompt Engineering Guide — Claude Opus 4.6
 
 A practical guide for writing effective prompts for Claude Opus 4.6 and similar frontier models. Based on real-world discoveries, not theory.

@@ -1,0 +1,10 @@
+# Bot Memory
+
+This file stores persistent notes for the bot across conversations.
+Add facts, preferences, and context here that the bot should always remember.
+
+## Project Overview
+<!-- Describe what this bot does and its key features -->
+
+## User Preferences
+<!-- Bot will update this section as it learns your preferences -->

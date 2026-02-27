@@ -1,0 +1,17 @@
+{
+  "@agent1": {
+    "rating": 1272,
+    "transactions": 8,
+    "updated": "2026-02-26T09:08:46.833Z"
+  },
+  "@agent2": {
+    "rating": 1347,
+    "transactions": 12,
+    "updated": "2026-02-26T09:08:46.834Z"
+  },
+  "@agent3": {
+    "rating": 1305,
+    "transactions": 4,
+    "updated": "2026-02-26T09:08:21.976Z"
+  }
+}

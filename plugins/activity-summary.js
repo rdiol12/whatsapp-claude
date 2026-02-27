@@ -1,24 +1,33 @@
 /**
  * Activity Summary Plugin — tracks daily message stats.
- * Proves the plugin system works and provides useful metrics.
  *
  * Hooks used:
  *   postChat — count messages and accumulate cost
+ *   onCommand — /activity shows today's stats
  *
- * State: plugin:activity-summary (daily reset)
+ * State: plugin_activity-summary (daily reset)
  */
+
+import config from '../lib/config.js';
+
+export const meta = {
+  name: 'activity-summary',
+  version: '1.1.0',
+  description: 'Tracks daily message stats and cost',
+  priority: 50,
+};
 
 const STATE_KEY = 'plugin_activity-summary';
 
 function getToday() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+  return new Date().toLocaleDateString('en-CA', { timeZone: config.timezone });
 }
 
 function getState(botApi) {
   const state = botApi.state.get(STATE_KEY) || {};
   // Reset if it's a new day
   if (state.date !== getToday()) {
-    return { date: getToday(), messages: 0, totalCost: 0, models: {} };
+    return { date: getToday(), messages: 0, totalCost: 0 };
   }
   return state;
 }
@@ -28,7 +37,7 @@ function saveState(botApi, state) {
 }
 
 export async function onStartup(botApi) {
-  botApi.log.info('Activity summary plugin loaded');
+  botApi.log.info('[activity-summary] Plugin started');
 }
 
 export function postChat(userMsg, reply, meta, botApi) {
@@ -37,9 +46,21 @@ export function postChat(userMsg, reply, meta, botApi) {
     state.messages++;
     state.totalCost += meta.costUsd || 0;
     saveState(botApi, state);
-  } catch {
-    // Non-critical — don't crash the bot
+  } catch (err) {
+    botApi.log.warn({ err: err.message }, '[activity-summary] Failed to track activity');
   }
+}
+
+export async function onCommand(cmd, text, botApi) {
+  if (cmd !== '/activity') return false;
+
+  const state = getState(botApi);
+  await botApi.send(
+    `*Today's Activity (${state.date}):*\n` +
+    `Messages: ${state.messages}\n` +
+    `Cost: $${state.totalCost.toFixed(4)}`
+  );
+  return true;
 }
 
 /**

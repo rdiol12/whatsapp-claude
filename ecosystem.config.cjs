@@ -1,13 +1,13 @@
 module.exports = {
   apps: [{
-    name: 'whatsapp-claude',
+    name: 'sela',
     script: 'index.js',
-    cwd: require('path').resolve(require('os').homedir(), 'whatsapp-claude'),
+    cwd: __dirname,
     node_args: '--experimental-vm-modules',
     max_memory_restart: '512M',
-    kill_timeout: 5000,
+    kill_timeout: 10000,
     autorestart: true,
-    exp_backoff_restart_delay: 1000,
+    exp_backoff_restart_delay: 2000,
     max_restarts: 20,
     error_file: './logs/error.log',
     out_file: './logs/out.log',
@@ -15,6 +15,49 @@ module.exports = {
     time: true,
     env: {
       NODE_ENV: 'production',
+      LANG: 'en_US.UTF-8',
+      PYTHONIOENCODING: 'utf-8',
+      CHCP: '65001',
+      CUDA_PATH: 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.1',
+      CudaToolkitDir: 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.1',
     },
-  }],
+  }, {
+    // Guardian M3: External watchdog — independent of main bot process.
+    // Pings /healthz every 5 min; alerts Telegram if sela is unreachable.
+    name: 'sela-watchdog',
+    script: 'lib/watchdog.js',
+    cwd: __dirname,
+    node_args: '--experimental-vm-modules',
+    max_memory_restart: '64M',
+    kill_timeout: 5000,
+    autorestart: true,
+    exp_backoff_restart_delay: 5000,
+    max_restarts: 10,
+    error_file: './logs/watchdog-error.log',
+    out_file: './logs/watchdog-out.log',
+    merge_logs: true,
+    time: true,
+    env: {
+      NODE_ENV: 'production',
+    },
+  },
+  // Uncomment to run the web dashboard via PM2:
+  // {
+  //   name: 'sela-dashboard',
+  //   script: 'dashboard.js',
+  //   cwd: __dirname,
+  //   max_memory_restart: '128M',
+  //   kill_timeout: 5000,
+  //   autorestart: true,
+  //   exp_backoff_restart_delay: 3000,
+  //   max_restarts: 10,
+  //   error_file: './logs/dashboard-error.log',
+  //   out_file: './logs/dashboard-out.log',
+  //   merge_logs: true,
+  //   time: true,
+  //   env: {
+  //     NODE_ENV: 'production',
+  //   },
+  // },
+  ],
 };

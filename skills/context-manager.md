@@ -1,6 +1,9 @@
 ---
-name: context-manager
-description: AI-powered context management for OpenClaw sessions
+name: "Context Manager"
+description: "AI-powered context management that generates intelligent summaries and compresses conversation sessions to extend context windows."
+keywords: ["context", "compression", "summary", "session", "memory", "management", "conversation"]
+category: "utility"
+tags: ["session-management", "memory"]
 user-invocable: true
 ---
 

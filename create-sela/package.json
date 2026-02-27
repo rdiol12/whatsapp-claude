@@ -1,0 +1,11 @@
+{
+  "name": "create-sela",
+  "version": "1.0.0",
+  "description": "Create a new Sela WhatsApp AI agent",
+  "bin": "index.js",
+  "keywords": ["whatsapp", "ai-agent", "claude", "autonomous", "create"],
+  "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  }
+}

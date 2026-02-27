@@ -9,7 +9,7 @@
 
 export const meta = {
   name: 'proposal-tracker',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Tracks user responses to agent brain proposals',
   priority: 10, // Run early — before other preChat hooks
 };
@@ -29,10 +29,11 @@ export async function onStartup(botApi) {
 
 /**
  * preChat hook — fires before message goes to Claude.
+ * Signature: (text, history, botApi)
  * If the message is a response to a pending proposal, handle it here
- * and return a response (prevents unnecessary Claude call).
+ * and return { handled: true } to skip the Claude call.
  */
-export async function preChat({ text, jid }, botApi) {
+export async function preChat(text, history, botApi) {
   if (!checkProposalResponse || !text) return;
 
   const result = checkProposalResponse(text);
@@ -40,28 +41,24 @@ export async function preChat({ text, jid }, botApi) {
 
   const { feedback, proposal } = result;
 
-  let replyText;
-  switch (feedback) {
-    case 'approved':
-      replyText = 'Got it. I\'ll set that up.';
-      // The actual action execution would be handled by the brain
-      // in the next cycle or by a dedicated executor.
-      // For now, log it for manual follow-through.
-      botApi.log.info({ proposalKey: proposal.patternKey }, 'Proposal approved by user');
-      break;
-    case 'rejected':
-      replyText = 'Noted, I won\'t suggest that again for a while.';
-      break;
-    case 'snoozed':
-      replyText = 'OK, I\'ll remind you later.';
-      break;
+  if (feedback === 'snoozed') {
+    if (botApi.send) await botApi.send('OK, I\'ll remind you later.');
+    return { handled: true };
   }
 
-  if (replyText && botApi.send) {
-    await botApi.send(replyText);
+  // approved or rejected — both go to LLM
+  const action = feedback === 'approved' ? 'approve' : 'reject';
+  const label = feedback === 'approved' ? 'On it...' : 'Noted, handling rejection...';
+  botApi.log.info({ proposalKey: proposal.patternKey, action }, 'Proposal sent to LLM');
+  if (botApi.send) await botApi.send(label);
+
+  try {
+    const { executeApprovedAction } = await import('../lib/agent-brain.js');
+    await executeApprovedAction(proposal, botApi.send, action);
+  } catch (err) {
+    botApi.log.warn({ err: err.message }, 'Failed to handle proposal via LLM');
+    if (botApi.send) await botApi.send(`Hit an error: ${err.message}`);
   }
 
-  // Return truthy to signal that the message was handled
-  // (this depends on how the plugin system processes preChat returns)
-  return { handled: true, reply: replyText };
+  return { handled: true };
 }

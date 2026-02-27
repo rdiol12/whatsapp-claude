@@ -5,3 +5,13 @@ logs/
 workspace/
 .env
 qr.png
+mcp-config.json
+*.db
+*.db-wal
+*.db-shm
+tmp*.js
+tmp*.cjs
+tmp*.mjs
+nul
+__pycache__/
+.agentchat/daemons/

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vestige": {
+      "command": "/path/to/vestige-mcp.exe",
+      "args": []
+    },
+    "bot-ops": {
+      "command": "node",
+      "args": ["/path/to/sela/lib/bot-mcp-server.js"]
+    }
+  }
+}

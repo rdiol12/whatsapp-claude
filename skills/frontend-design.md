@@ -1,3 +1,11 @@
+---
+name: "Frontend Design"
+description: "Creates distinctive, production-grade UI components and interfaces with bold aesthetic direction and exceptional attention to design details."
+keywords: ["frontend", "design", "ui", "components", "css", "styling", "interface", "aesthetics"]
+category: "development"
+tags: ["design", "web", "implementation"]
+---
+
 # Frontend Design
 
 This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.

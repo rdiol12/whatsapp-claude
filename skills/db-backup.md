@@ -1,3 +1,11 @@
+---
+name: "Database Backup"
+description: "Automated SQLite backup with auto-discovery, encryption, Google Drive upload, and retention management."
+keywords: ["backup", "database", "sqlite", "encryption", "recovery", "storage", "automated", "security"]
+category: "operations"
+tags: ["automated", "security", "backup", "scheduled"]
+---
+
 # Database Backup System
 
 Automated SQLite database backup with auto-discovery, encryption, and Google Drive upload.
